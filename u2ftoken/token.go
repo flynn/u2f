@@ -13,8 +13,13 @@ const (
 	cmdAuthenticate = 2
 	cmdVersion      = 3
 
-	authEnforce   = 3
-	authCheckOnly = 7
+	tupRequired = 1 // Test of User Presence required
+	tupConsume  = 2 // Consume a Test of User Presence
+	tupTestOnly = 4 // Check valid key handle only, no test of user presence required
+
+	authEnforce = tupRequired | tupConsume
+	// This makes zero sense, but the check command is all three flags, not just tupTestOnly
+	authCheckOnly = tupRequired | tupConsume | tupTestOnly
 
 	statusNoError                = 0x9000
 	statusWrongLength            = 0x6700
@@ -74,6 +79,7 @@ func (t *Token) Register(req RegisterRequest) ([]byte, error) {
 	}
 
 	res, err := t.Message(Request{
+		Param1:  authEnforce,
 		Command: cmdRegister,
 		Data:    append(req.Challenge, req.Application...),
 	})
