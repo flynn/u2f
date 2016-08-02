@@ -48,15 +48,20 @@ var errorCodes = map[uint8]string{
 }
 
 // Devices lists available HID devices that advertise the U2F HID protocol.
-func Devices() []*hid.DeviceInfo {
-	devices := hid.Devices()
+func Devices() ([]*hid.DeviceInfo, error) {
+	devices, err := hid.Devices()
+	if err != nil {
+		return nil, err
+	}
+
 	res := make([]*hid.DeviceInfo, 0, len(devices))
 	for _, d := range devices {
 		if d.UsagePage == fidoUsagePage && d.Usage == u2fUsage {
 			res = append(res, d)
 		}
 	}
-	return res
+
+	return res, nil
 }
 
 // Open initializes a communication channel with a U2F HID device.

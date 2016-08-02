@@ -10,7 +10,11 @@ import (
 
 func main() {
 	msg := []byte(strings.Repeat("echo", 100))
-	for _, d := range u2fhid.Devices() {
+	devices, err := u2fhid.Devices()
+	if err != nil {
+		log.Fatal(err)
+	}
+	for _, d := range devices {
 		dev, err := u2fhid.Open(d)
 		if err != nil {
 			log.Fatal(err)

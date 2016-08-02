@@ -11,7 +11,15 @@ import (
 )
 
 func main() {
-	dev, err := u2fhid.Open(u2fhid.Devices()[0])
+	devices, err := u2fhid.Devices()
+	if err != nil {
+		log.Fatal(err)
+	}
+	if len(devices) == 0 {
+		log.Fatal("no U2F tokens found")
+	}
+
+	dev, err := u2fhid.Open(devices[0])
 	if err != nil {
 		log.Fatal(err)
 	}
