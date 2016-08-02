@@ -77,7 +77,7 @@ func Open(info *hid.DeviceInfo) (*Device, error) {
 		readCh: hidDev.ReadCh(),
 	}
 
-	if err := d.init(true); err != nil {
+	if err := d.init(); err != nil {
 		return nil, err
 	}
 
@@ -208,7 +208,7 @@ func (d *Device) readResponse(channel uint32, cmd byte) ([]byte, error) {
 	}
 }
 
-func (d *Device) init(retry bool) error {
+func (d *Device) init() error {
 	d.buf = make([]byte, d.info.OutputReportLength+1)
 
 	nonce := make([]byte, 8)
@@ -233,13 +233,6 @@ func (d *Device) init(retry bool) error {
 			continue
 		}
 		d.channel = binary.BigEndian.Uint32(res[8:])
-
-		// Yubikeys appear to return a bogus channel ID to the first
-		// initialization immediately after they are plugged in, retry once if
-		// none of the top 104 bits in the channel ID are set.
-		if d.channel>>24 == 0 && retry {
-			return d.init(false)
-		}
 
 		d.ProtocolVersion = res[12]
 		d.MajorDeviceVersion = res[13]
