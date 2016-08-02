@@ -19,22 +19,14 @@ func main() {
 		log.Fatal("no U2F tokens found")
 	}
 
-	dev, err := u2fhid.Open(devices[0])
+	d := devices[0]
+	log.Printf("manufacturer = %q, product = %q, vid = 0x%04x, pid = 0x%04x", d.Manufacturer, d.Product, d.ProductID, d.VendorID)
+
+	dev, err := u2fhid.Open(d)
 	if err != nil {
 		log.Fatal(err)
 	}
 	t := u2ftoken.NewToken(dev)
-
-	challenge := make([]byte, 32)
-	app := make([]byte, 32)
-	io.ReadFull(rand.Reader, challenge)
-	io.ReadFull(rand.Reader, app)
-
-	res, err := t.Register(u2ftoken.RegisterRequest{Challenge: challenge, Application: app})
-	if err != nil {
-		log.Fatal(err)
-	}
-	log.Printf("registered: %x", res)
 
 	version, err := t.Version()
 	if err != nil {
@@ -42,6 +34,25 @@ func main() {
 	}
 	log.Println("version:", version)
 
+	challenge := make([]byte, 32)
+	app := make([]byte, 32)
+	io.ReadFull(rand.Reader, challenge)
+	io.ReadFull(rand.Reader, app)
+
+	var res []byte
+	log.Println("registering, provide user presence")
+	for {
+		res, err = t.Register(u2ftoken.RegisterRequest{Challenge: challenge, Application: app})
+		if err == u2ftoken.ErrPresenceRequired {
+			time.Sleep(200 * time.Millisecond)
+			continue
+		} else if err != nil {
+			log.Fatal(err)
+		}
+		break
+	}
+
+	log.Printf("registered: %x", res)
 	res = res[66:]
 	khLen := int(res[0])
 	res = res[1:]
@@ -59,16 +70,26 @@ func main() {
 	}
 
 	io.ReadFull(rand.Reader, challenge)
+	log.Println("authenticating, provide user presence")
 	for {
 		res, err := t.Authenticate(req)
 		if err == u2ftoken.ErrPresenceRequired {
-			log.Println("user presence required, retrying in one second")
-			time.Sleep(time.Second)
+			time.Sleep(200 * time.Millisecond)
 			continue
 		} else if err != nil {
 			log.Fatal(err)
 		}
 		log.Printf("counter = %d, signature = %x", res.Counter, res.Signature)
 		break
+	}
+
+	if dev.CapabilityWink {
+		log.Println("testing wink in 1s...")
+		time.Sleep(1 * time.Second)
+		if err := dev.Wink(); err != nil {
+			log.Fatal(err)
+		}
+	} else {
+		log.Println("no wink capability")
 	}
 }
