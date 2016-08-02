@@ -119,11 +119,11 @@ func (d *Device) sendCommand(channel uint32, cmd byte, data []byte) error {
 		d.buf[i] = 0
 	}
 
-	binary.BigEndian.PutUint32(d.buf, channel)
-	d.buf[4] = cmd
-	binary.BigEndian.PutUint16(d.buf[5:], uint16(len(data)))
+	binary.BigEndian.PutUint32(d.buf[1:], channel)
+	d.buf[5] = cmd
+	binary.BigEndian.PutUint16(d.buf[6:], uint16(len(data)))
 
-	n := copy(d.buf[7:], data)
+	n := copy(d.buf[8:], data)
 	data = data[n:]
 
 	if err := d.device.Write(d.buf); err != nil {
@@ -137,10 +137,10 @@ func (d *Device) sendCommand(channel uint32, cmd byte, data []byte) error {
 			d.buf[i] = 0
 		}
 
-		binary.BigEndian.PutUint32(d.buf, channel)
-		d.buf[4] = seq
+		binary.BigEndian.PutUint32(d.buf[1:], channel)
+		d.buf[5] = seq
 		seq++
-		n := copy(d.buf[5:], data)
+		n := copy(d.buf[6:], data)
 		data = data[n:]
 		if err := d.device.Write(d.buf); err != nil {
 			return err
@@ -209,7 +209,7 @@ func (d *Device) readResponse(channel uint32, cmd byte) ([]byte, error) {
 }
 
 func (d *Device) init(retry bool) error {
-	d.buf = make([]byte, d.info.OutputReportLength)
+	d.buf = make([]byte, d.info.OutputReportLength+1)
 
 	nonce := make([]byte, 8)
 	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
