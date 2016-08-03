@@ -59,6 +59,22 @@ func main() {
 	keyHandle := res[:khLen]
 	log.Printf("key handle: %x", keyHandle)
 
+	dev.Close()
+
+	log.Println("reconnecting to device in 3 seconds...")
+	time.Sleep(3 * time.Second)
+
+	devices, err = u2fhid.Devices()
+	if err != nil {
+		log.Fatal(err)
+	}
+	d = devices[0]
+	dev, err = u2fhid.Open(d)
+	if err != nil {
+		log.Fatal(err)
+	}
+	t = u2ftoken.NewToken(dev)
+
 	io.ReadFull(rand.Reader, challenge)
 	req := u2ftoken.AuthenticateRequest{
 		Challenge:   challenge,
@@ -84,11 +100,12 @@ func main() {
 	}
 
 	if dev.CapabilityWink {
-		log.Println("testing wink in 1s...")
-		time.Sleep(1 * time.Second)
+		log.Println("testing wink in 2s...")
+		time.Sleep(2 * time.Second)
 		if err := dev.Wink(); err != nil {
 			log.Fatal(err)
 		}
+		time.Sleep(2 * time.Second)
 	} else {
 		log.Println("no wink capability")
 	}
