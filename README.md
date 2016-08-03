@@ -7,7 +7,7 @@ directories in each package for usage information.
 
 ## Compatibility
 
-Tested with these devices on Linux and macOS:
+Tested with these devices on macOS, Linux, and Windows:
 
 | Vendor | Product | Vendor ID | Product ID | Version | Implements Wink | Notes |
 | ------ | ------- | --------- | ---------- | ------- | --------------- | ----- |
