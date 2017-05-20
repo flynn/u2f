@@ -124,7 +124,7 @@ type AuthenticateResponse struct {
 	// Signature is the P-256 ECDSA signature over the authentication data.
 	Signature []byte
 
-	// RawResponse is the raw response bytes as sent from the u2f token
+	// RawResponse is the raw response bytes from the U2F token.
 	RawResponse []byte
 }
 
