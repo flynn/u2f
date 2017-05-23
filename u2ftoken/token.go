@@ -123,6 +123,9 @@ type AuthenticateResponse struct {
 
 	// Signature is the P-256 ECDSA signature over the authentication data.
 	Signature []byte
+
+	// RawResponse is the raw response bytes from the U2F token.
+	RawResponse []byte
 }
 
 func encodeAuthenticateRequest(req AuthenticateRequest) ([]byte, error) {
@@ -176,8 +179,9 @@ func (t *Token) Authenticate(req AuthenticateRequest) (*AuthenticateResponse, er
 	}
 
 	return &AuthenticateResponse{
-		Counter:   binary.BigEndian.Uint32(res.Data[1:]),
-		Signature: res.Data[5:],
+		Counter:     binary.BigEndian.Uint32(res.Data[1:]),
+		Signature:   res.Data[5:],
+		RawResponse: res.Data,
 	}, nil
 }
 
