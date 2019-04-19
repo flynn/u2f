@@ -17,9 +17,10 @@ const (
 	tupConsume  = 2 // Consume a Test of User Presence
 	tupTestOnly = 4 // Check valid key handle only, no test of user presence required
 
-	authEnforce = tupRequired | tupConsume
-	// This makes zero sense, but the check command is all three flags, not just tupTestOnly
-	authCheckOnly = tupRequired | tupConsume | tupTestOnly
+	// These are the authentication P1 bytes defined by the 1.2 spec
+	authEnforceUpAndSign     = 0x03
+	authCheckOnly            = 0x07
+	authDontEnforceUpAndSign = 0x08
 
 	statusNoError                = 0x9000
 	statusWrongLength            = 0x6700
@@ -79,7 +80,6 @@ func (t *Token) Register(req RegisterRequest) ([]byte, error) {
 	}
 
 	res, err := t.Message(Request{
-		Param1:  authEnforce,
 		Command: cmdRegister,
 		Data:    append(req.Challenge, req.Application...),
 	})
@@ -112,6 +112,12 @@ type AuthenticateRequest struct {
 	// KeyHandle is the opaque key handle that was provided to the relying party
 	// during registration.
 	KeyHandle []byte
+
+	// The U2F 1.2 spec allows authentication requests to be made without enforcing
+	// user presence. If set to true, this will request that the token not require
+	// user presence. Tokens which are only compliant with earlier versions of the
+	// spec will return an error.
+	DoNotEnforceUserPresence bool
 }
 
 // An AuthenticateResponse is a message returned in response to a successful
@@ -158,9 +164,15 @@ func (t *Token) Authenticate(req AuthenticateRequest) (*AuthenticateResponse, er
 		return nil, err
 	}
 
+	var p1 uint8
+	if req.DoNotEnforceUserPresence {
+		p1 = authDontEnforceUpAndSign
+	} else {
+		p1 = authEnforceUpAndSign
+	}
 	res, err := t.Message(Request{
 		Command: cmdAuthenticate,
-		Param1:  authEnforce,
+		Param1:  p1,
 		Data:    buf,
 	})
 	if err != nil {
