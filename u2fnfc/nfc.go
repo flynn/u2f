@@ -10,7 +10,7 @@ import (
 
 var ctx *smartcard.Context
 
-//GetContext returns the smartcard context singleton.
+// GetContext returns the smartcard context singleton.
 func GetContext() *smartcard.Context {
 	if ctx == nil {
 		ctx, _ = smartcard.EstablishContext()
@@ -56,7 +56,7 @@ func Open() (*Device, error) {
 	}, nil
 }
 
-// Make sure the APDUs transmitted are valid.
+// FixAPDU makes sure the APDUs transmitted are valid.
 func FixAPDU(data []byte) []byte {
 	apdu := smartcard.CommandAPDU(data)
 	if !apdu.IsValid() {
