@@ -14,13 +14,16 @@ import (
 )
 
 const (
-	cmdPing  = 0x80 | 0x01
-	cmdMsg   = 0x80 | 0x03
-	cmdLock  = 0x80 | 0x04
-	cmdInit  = 0x80 | 0x06
-	cmdWink  = 0x80 | 0x08
-	cmdSync  = 0x80 | 0x3c
-	cmdError = 0x80 | 0x3f
+	cmdPing      = 0x80 | 0x01
+	cmdMsg       = 0x80 | 0x03
+	cmdLock      = 0x80 | 0x04
+	cmdInit      = 0x80 | 0x06
+	cmdWink      = 0x80 | 0x08
+	cmdCbor      = 0x80 | 0x10
+	cmdCancel    = 0x80 | 0x11
+	cmdKeepAlive = 0x80 | 0x3b
+	cmdSync      = 0x80 | 0x3c
+	cmdError     = 0x80 | 0x3f
 
 	broadcastChannel = 0xffffffff
 
@@ -273,6 +276,12 @@ func (d *Device) Wink() error {
 // the response.
 func (d *Device) Message(data []byte) ([]byte, error) {
 	return d.Command(cmdMsg, data)
+}
+
+// CBOR sends an encapsulated CBOR protocol message to the device and returns
+// the response.
+func (d *Device) CBOR(data []byte) ([]byte, error) {
+	return d.Command(cmdCbor, data)
 }
 
 // Close closes the device and frees associated resources.
