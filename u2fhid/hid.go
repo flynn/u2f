@@ -33,7 +33,7 @@ const (
 	maxMessageLen      = 7609
 	minInitResponseLen = 17
 
-	responseTimeout = 3 * time.Second
+	responseTimeout = 10 * time.Second
 
 	fidoUsagePage = 0xF1D0
 	u2fUsage      = 1
@@ -180,9 +180,14 @@ func (d *Device) readResponse(channel uint32, cmd byte) ([]byte, error) {
 				return nil, fmt.Errorf("u2fhid: received error from device: %s", errMsg)
 			}
 
+			// device will send keepalive msg when waiting for the user presence
+			if msg[4] == cmdKeepAlive {
+				continue
+			}
+
 			if !haveFirst {
 				if msg[4] != cmd {
-					return nil, fmt.Errorf("u2fhid: error reading response, unexpected command %d, wanted %d", msg[4], cmd)
+					return nil, fmt.Errorf("u2fhid: error reading response, unexpected command %x, wanted %x", msg[4], cmd)
 				}
 				haveFirst = true
 				expected = int(binary.BigEndian.Uint16(msg[5:]))
