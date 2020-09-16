@@ -19,53 +19,101 @@ const (
 	cmdGetNextAssertion = 0x08
 )
 
+var (
+	ErrInvalidCommand       = errors.New("CTAP1_ERR_INVALID_COMMAND")
+	ErrInvalidParameter     = errors.New("CTAP1_ERR_INVALID_PARAMETER")
+	ErrInvalidLength        = errors.New("CTAP1_ERR_INVALID_LENGTH")
+	ErrInvalidSeq           = errors.New("CTAP1_ERR_INVALID_SEQ")
+	ErrTimeout              = errors.New("CTAP1_ERR_TIMEOUT")
+	ErrChannelBusy          = errors.New("CTAP1_ERR_CHANNEL_BUSY")
+	ErrLockRequired         = errors.New("CTAP1_ERR_LOCK_REQUIRED")
+	ErrInvalidChannel       = errors.New("CTAP1_ERR_INVALID_CHANNEL")
+	ErrCborUnexpectedType   = errors.New("CTAP2_ERR_CBOR_UNEXPECTED_TYPE")
+	ErrInvalidCbor          = errors.New("CTAP2_ERR_INVALID_CBOR")
+	ErrMissingParameter     = errors.New("CTAP2_ERR_MISSING_PARAMETER")
+	ErrLimitExceeded        = errors.New("CTAP2_ERR_LIMIT_EXCEEDED")
+	ErrUnsupportedExtension = errors.New("CTAP2_ERR_UNSUPPORTED_EXTENSION")
+	ErrCredentialExcluded   = errors.New("CTAP2_ERR_CREDENTIAL_EXCLUDED")
+	ErrProcessing           = errors.New("CTAP2_ERR_PROCESSING")
+	ErrInvalidCredential    = errors.New("CTAP2_ERR_INVALID_CREDENTIAL")
+	ErrUserActionPending    = errors.New("CTAP2_ERR_USER_ACTION_PENDING")
+	ErrOperationPending     = errors.New("CTAP2_ERR_OPERATION_PENDING")
+	ErrNoOperations         = errors.New("CTAP2_ERR_NO_OPERATIONS")
+	ErrUnsupportedAlgorithm = errors.New("CTAP2_ERR_UNSUPPORTED_ALGORITHM")
+	ErrOperationDenied      = errors.New("CTAP2_ERR_OPERATION_DENIED")
+	ErrKeyStoreFull         = errors.New("CTAP2_ERR_KEY_STORE_FULL")
+	ErrNoOperationPending   = errors.New("CTAP2_ERR_NO_OPERATION_PENDING")
+	ErrUnsupportedOption    = errors.New("CTAP2_ERR_UNSUPPORTED_OPTION")
+	ErrInvalidOption        = errors.New("CTAP2_ERR_INVALID_OPTION")
+	ErrKeepaliveCancel      = errors.New("CTAP2_ERR_KEEPALIVE_CANCEL")
+	ErrNoCredentials        = errors.New("CTAP2_ERR_NO_CREDENTIALS")
+	ErrUserActionTimeout    = errors.New("CTAP2_ERR_USER_ACTION_TIMEOUT")
+	ErrNotAllowed           = errors.New("CTAP2_ERR_NOT_ALLOWED")
+	ErrPinInvalid           = errors.New("CTAP2_ERR_PIN_INVALID")
+	ErrPinBlocked           = errors.New("CTAP2_ERR_PIN_BLOCKED")
+	ErrPinAuthInvalid       = errors.New("CTAP2_ERR_PIN_AUTH_INVALID")
+	ErrPinAuthBlocked       = errors.New("CTAP2_ERR_PIN_AUTH_BLOCKED")
+	ErrPinNotSet            = errors.New("CTAP2_ERR_PIN_NOT_SET")
+	ErrPinRequired          = errors.New("CTAP2_ERR_PIN_REQUIRED")
+	ErrPinPolicyViolation   = errors.New("CTAP2_ERR_PIN_POLICY_VIOLATION")
+	ErrPinTokenExpired      = errors.New("CTAP2_ERR_PIN_TOKEN_EXPIRED")
+	ErrRequestTooLarge      = errors.New("CTAP2_ERR_REQUEST_TOO_LARGE")
+	ErrActionTimeout        = errors.New("CTAP2_ERR_ACTION_TIMEOUT")
+	ErrUpRequired           = errors.New("CTAP2_ERR_UP_REQUIRED")
+	ErrSpecLast             = errors.New("CTAP2_ERR_SPEC_LAST")
+	ErrExtensionFirst       = errors.New("CTAP2_ERR_EXTENSION_FIRST")
+	ErrExtensionLast        = errors.New("CTAP2_ERR_EXTENSION_LAST")
+	ErrVendorFirst          = errors.New("CTAP2_ERR_VENDOR_FIRST")
+	ErrVendorLast           = errors.New("CTAP2_ERR_VENDOR_LAST")
+)
+
 // CTAP2 error status from https://fidoalliance.org/specs/fido-v2.0-ps-20190130/fido-client-to-authenticator-protocol-v2.0-ps-20190130.html#error-responses
-var ctap2Status = map[byte]string{
-	0x01: "CTAP1_ERR_INVALID_COMMAND",
-	0x02: "CTAP1_ERR_INVALID_PARAMETER",
-	0x03: "CTAP1_ERR_INVALID_LENGTH",
-	0x04: "CTAP1_ERR_INVALID_SEQ",
-	0x05: "CTAP1_ERR_TIMEOUT",
-	0x06: "CTAP1_ERR_CHANNEL_BUSY",
-	0x0A: "CTAP1_ERR_LOCK_REQUIRED",
-	0x0B: "CTAP1_ERR_INVALID_CHANNEL",
-	0x11: "CTAP2_ERR_CBOR_UNEXPECTED_TYPE",
-	0x12: "CTAP2_ERR_INVALID_CBOR",
-	0x14: "CTAP2_ERR_MISSING_PARAMETER",
-	0x15: "CTAP2_ERR_LIMIT_EXCEEDED",
-	0x16: "CTAP2_ERR_UNSUPPORTED_EXTENSION",
-	0x19: "CTAP2_ERR_CREDENTIAL_EXCLUDED",
-	0x21: "CTAP2_ERR_PROCESSING",
-	0x22: "CTAP2_ERR_INVALID_CREDENTIAL",
-	0x23: "CTAP2_ERR_USER_ACTION_PENDING",
-	0x24: "CTAP2_ERR_OPERATION_PENDING",
-	0x25: "CTAP2_ERR_NO_OPERATIONS",
-	0x26: "CTAP2_ERR_UNSUPPORTED_ALGORITHM",
-	0x27: "CTAP2_ERR_OPERATION_DENIED",
-	0x28: "CTAP2_ERR_KEY_STORE_FULL",
-	0x2A: "CTAP2_ERR_NO_OPERATION_PENDING",
-	0x2B: "CTAP2_ERR_UNSUPPORTED_OPTION",
-	0x2C: "CTAP2_ERR_INVALID_OPTION",
-	0x2D: "CTAP2_ERR_KEEPALIVE_CANCEL",
-	0x2E: "CTAP2_ERR_NO_CREDENTIALS",
-	0x2F: "CTAP2_ERR_USER_ACTION_TIMEOUT",
-	0x30: "CTAP2_ERR_NOT_ALLOWED",
-	0x31: "CTAP2_ERR_PIN_INVALID",
-	0x32: "CTAP2_ERR_PIN_BLOCKED",
-	0x33: "CTAP2_ERR_PIN_AUTH_INVALID",
-	0x34: "CTAP2_ERR_PIN_AUTH_BLOCKED",
-	0x35: "CTAP2_ERR_PIN_NOT_SET",
-	0x36: "CTAP2_ERR_PIN_REQUIRED",
-	0x37: "CTAP2_ERR_PIN_POLICY_VIOLATION",
-	0x38: "CTAP2_ERR_PIN_TOKEN_EXPIRED",
-	0x39: "CTAP2_ERR_REQUEST_TOO_LARGE",
-	0x3A: "CTAP2_ERR_ACTION_TIMEOUT",
-	0x3B: "CTAP2_ERR_UP_REQUIRED",
-	0xDF: "CTAP2_ERR_SPEC_LAST",
-	0xE0: "CTAP2_ERR_EXTENSION_FIRST",
-	0xEF: "CTAP2_ERR_EXTENSION_LAST",
-	0xF0: "CTAP2_ERR_VENDOR_FIRST",
-	0xFF: "CTAP2_ERR_VENDOR_LAST",
+var ctapErrors = map[byte]error{
+	0x01: ErrInvalidCommand,
+	0x02: ErrInvalidParameter,
+	0x03: ErrInvalidLength,
+	0x04: ErrInvalidSeq,
+	0x05: ErrTimeout,
+	0x06: ErrChannelBusy,
+	0x0A: ErrLockRequired,
+	0x0B: ErrInvalidChannel,
+	0x11: ErrCborUnexpectedType,
+	0x12: ErrInvalidCbor,
+	0x14: ErrMissingParameter,
+	0x15: ErrLimitExceeded,
+	0x16: ErrUnsupportedExtension,
+	0x19: ErrCredentialExcluded,
+	0x21: ErrProcessing,
+	0x22: ErrInvalidCredential,
+	0x23: ErrUserActionPending,
+	0x24: ErrOperationPending,
+	0x25: ErrNoOperations,
+	0x26: ErrUnsupportedAlgorithm,
+	0x27: ErrOperationDenied,
+	0x28: ErrKeyStoreFull,
+	0x2A: ErrNoOperationPending,
+	0x2B: ErrUnsupportedOption,
+	0x2C: ErrInvalidOption,
+	0x2D: ErrKeepaliveCancel,
+	0x2E: ErrNoCredentials,
+	0x2F: ErrUserActionTimeout,
+	0x30: ErrNotAllowed,
+	0x31: ErrPinInvalid,
+	0x32: ErrPinBlocked,
+	0x33: ErrPinAuthInvalid,
+	0x34: ErrPinAuthBlocked,
+	0x35: ErrPinNotSet,
+	0x36: ErrPinRequired,
+	0x37: ErrPinPolicyViolation,
+	0x38: ErrPinTokenExpired,
+	0x39: ErrRequestTooLarge,
+	0x3A: ErrActionTimeout,
+	0x3B: ErrUpRequired,
+	0xDF: ErrSpecLast,
+	0xE0: ErrExtensionFirst,
+	0xEF: ErrExtensionLast,
+	0xF0: ErrVendorFirst,
+	0xFF: ErrVendorLast,
 }
 
 type Device interface {
@@ -141,7 +189,7 @@ type GetAssertionRequest struct {
 	AllowList         []*CredentialDescriptor  `cbor:"3,keyasint,omitempty"`
 	Extensions        AuthenticatorExtensions  `cbor:"4,keyasint,omitempty"`
 	Options           AuthenticatorOptions     `cbor:"5,keyasint,omitempty"`
-	PinUVAuth         []byte                   `cbor:"6,keyasint,omitempty"`
+	PinUVAuth         PinUVAuth                `cbor:"6,keyasint,omitempty"`
 	PinUVAuthProtocol PinUVAuthProtocolVersion `cbor:"7,keyasint,omitempty"`
 }
 
@@ -285,11 +333,11 @@ func checkResponse(resp []byte) error {
 	}
 
 	if resp[0] != statusSuccess {
-		status, ok := ctap2Status[resp[0]]
+		status, ok := ctapErrors[resp[0]]
 		if !ok {
-			status = fmt.Sprintf("unknown error %x", resp[0])
+			status = fmt.Errorf("unknown error %x", resp[0])
 		}
-		return fmt.Errorf("ctap2token: CBOR error: %s", status)
+		return fmt.Errorf("ctap2token: CBOR error: %w", status)
 	}
 	return nil
 }
@@ -486,6 +534,8 @@ const (
 type AuthenticatorExtensions map[string]interface{}
 
 type AuthenticatorOptions map[string]bool
+
+type PinUVAuth []byte
 
 type PinUVAuthProtocolVersion uint
 
