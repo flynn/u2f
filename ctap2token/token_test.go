@@ -97,9 +97,7 @@ func TestEncodeMakeCredentialRequest(t *testing.T) {
 			PublicKeyES256,
 			PublicKeyRS256,
 		},
-		Options: AuthenticatorOptions{
-			ResidentKey: true,
-		},
+		Options: AuthenticatorOptions{"rk": true},
 	}
 
 	enc, err := cbor.CTAP2EncOptions().EncMode()
