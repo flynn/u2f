@@ -181,6 +181,14 @@ func (t *Token) GetAssertion(req *GetAssertionRequest) (*GetAssertionResponse, e
 	return respData, nil
 }
 
+type GetNextAssertionRequest struct{}
+type GetNextAssertionResponse struct{}
+
+func (t *Token) GetNextAssertion(*GetNextAssertionRequest) (*GetNextAssertionResponse, error) {
+	// TODO
+	return nil, nil
+}
+
 type GetInfoResponse struct {
 	Versions    []string             `cbor:"1,keyasint"`
 	Extensions  []string             `cbor:"2,keyasint,omitempty"`
@@ -249,27 +257,37 @@ func (t *Token) ClientPIN(req *ClientPINRequest) (*ClientPINResponse, error) {
 	return respData, nil
 }
 
-type ResetRequest struct{}
-type ResetResponse struct{}
+// Reset restore an authenticator back to a factory default state. User presence is required.
+// In case of authenticators with no display, Reset request MUST have come to the authenticator within 10 seconds
+// of powering up of the authenticator
+// see: https://fidoalliance.org/specs/fido2/fido-client-to-authenticator-protocol-v2.1-rd-20191217.html#authenticatorReset
+func (t *Token) Reset() error {
+	resp, err := t.d.CBOR([]byte{cmdReset})
+	if err != nil {
+		return err
+	}
 
-func (t *Token) Reset(*ResetRequest) (*ResetResponse, error) {
-	return nil, nil
+	return checkResponse(resp)
 }
 
-type GetNextAssertionRequest struct{}
-type GetNextAssertionResponse struct{}
+func checkResponse(resp []byte) error {
+	if len(resp) == 0 {
+		return errors.New("ctap2token: empty response")
+	}
 
-func (t *Token) GetNextAssertion(*GetNextAssertionRequest) (*GetNextAssertionResponse, error) {
-	return nil, nil
-}
-
-func unmarshal(resp []byte, out interface{}) error {
-	if len(resp) == 0 || resp[0] != statusSuccess {
+	if resp[0] != statusSuccess {
 		status, ok := ctap2Status[resp[0]]
 		if !ok {
 			status = fmt.Sprintf("unknown error %x", resp[0])
 		}
 		return fmt.Errorf("ctap2token: CBOR error: %s", status)
+	}
+	return nil
+}
+
+func unmarshal(resp []byte, out interface{}) error {
+	if err := checkResponse(resp); err != nil {
+		return err
 	}
 
 	if err := cbor.Unmarshal(resp[1:], out); err != nil {
