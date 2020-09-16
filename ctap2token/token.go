@@ -144,7 +144,8 @@ type GetAssertionRequest struct {
 	PinUVAuth         []byte                   `cbor:"6,keyasint,omitempty"`
 	PinUVAuthProtocol PinUVAuthProtocolVersion `cbor:"7,keyasint,omitempty"`
 }
-type GetAssertionResponse struct {
+
+type AssertionResponse struct {
 	Credential          *CredentialDescriptor `cbor:"1,keyasint,omitempty"`
 	AuthData            AuthData              `cbor:"2,keyasint"`
 	Signature           []byte                `cbor:"3,keyasint"`
@@ -153,7 +154,7 @@ type GetAssertionResponse struct {
 	UserSelected        bool                  `cbor:"6,keyasint,omitempty"`
 }
 
-func (t *Token) GetAssertion(req *GetAssertionRequest) (*GetAssertionResponse, error) {
+func (t *Token) GetAssertion(req *GetAssertionRequest) (*AssertionResponse, error) {
 	enc, err := cbor.CTAP2EncOptions().EncMode()
 	if err != nil {
 		return nil, err
@@ -173,7 +174,7 @@ func (t *Token) GetAssertion(req *GetAssertionRequest) (*GetAssertionResponse, e
 		return nil, err
 	}
 
-	respData := &GetAssertionResponse{}
+	respData := &AssertionResponse{}
 	if err := unmarshal(resp, respData); err != nil {
 		return nil, err
 	}
@@ -181,12 +182,20 @@ func (t *Token) GetAssertion(req *GetAssertionRequest) (*GetAssertionResponse, e
 	return respData, nil
 }
 
-type GetNextAssertionRequest struct{}
-type GetNextAssertionResponse struct{}
+// GetNextAssertion is used to obtain the next per-credential signature for a given GetAssertion request,
+// when GetAssertion.NumberOfCredentials is greater than 1.
+// see https://fidoalliance.org/specs/fido2/fido-client-to-authenticator-protocol-v2.1-rd-20191217.html#authenticatorGetNextAssertion
+func (t *Token) GetNextAssertion() (*AssertionResponse, error) {
+	resp, err := t.d.CBOR([]byte{cmdGetNextAssertion})
+	if err != nil {
+		return nil, err
+	}
 
-func (t *Token) GetNextAssertion(*GetNextAssertionRequest) (*GetNextAssertionResponse, error) {
-	// TODO
-	return nil, nil
+	respData := &AssertionResponse{}
+	if err := unmarshal(resp, respData); err != nil {
+		return nil, err
+	}
+	return respData, nil
 }
 
 type GetInfoResponse struct {
