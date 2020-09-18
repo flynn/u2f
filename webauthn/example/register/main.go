@@ -32,7 +32,7 @@ func main() {
 
 		c := &http.Client{}
 		// localhost:9005 runs a server from https://github.com/duo-labs/webauthn.io
-		httpResp, err := c.Get("http://localhost:9005/makeCredential/aaa?attType=none&authType=&userVerification=preferred&residentKeyRequirement=false&txAuthExtension=")
+		httpResp, err := c.Get("http://localhost:9005/makeCredential/aaaa?attType=none&authType=&userVerification=preferred&residentKeyRequirement=false&txAuthExtension=")
 		if err != nil {
 			panic(err)
 		}
@@ -42,6 +42,9 @@ func main() {
 			panic(err)
 		}
 		fmt.Printf("response: %s\n", d)
+		if httpResp.StatusCode != 200 {
+			panic("non 200 server response")
+		}
 
 		webauthnReq := &webauthn.RegisterRequest{}
 		err = json.NewDecoder(httpResp.Body).Decode(webauthnReq)

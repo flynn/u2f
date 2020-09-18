@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"reflect"
 
 	"github.com/flynn/u2f/ctap2token"
 	ctap2 "github.com/flynn/u2f/ctap2token"
@@ -20,7 +19,7 @@ type WebauthnToken interface {
 	// Register is the equivalent to navigator.credential.create()
 	Register(origin string, req *RegisterRequest) (*RegisterResponse, error)
 	// Authenticate is the equivalent to navigator.credential.get()
-	Authenticate(req *AuthenticateRequest) (*AuthenticateResponse, error)
+	Authenticate(origin string, req *AuthenticateRequest) (*AuthenticateResponse, error)
 }
 
 type RegisterRequest struct {
@@ -71,30 +70,29 @@ type AttestationResponse struct {
 
 type AuthenticateRequest struct {
 	PublicKey struct {
-		Challenge        string `json:"challenge"`
+		Challenge        []byte `json:"challenge"`
 		Timeout          int    `json:"timeout"`
 		RpID             string `json:"rpId"`
 		AllowCredentials []struct {
 			Type string `json:"type"`
-			ID   string `json:"id"`
+			ID   []byte `json:"id"`
 		} `json:"allowCredentials"`
-		Extensions struct {
-			TxAuthSimple string `json:"txAuthSimple"`
-		} `json:"extensions"`
+		UserVerification string                 `json:"userVerification"`
+		Extensions       map[string]interface{} `json:"extensions"`
 	} `json:"publicKey"`
 }
 type AuthenticateResponse struct {
 	ID       string            `json:"id"`
-	RawID    []byte            `json:"rawId"`
+	RawID    URLEncodedBase64  `json:"rawId"`
 	Type     string            `json:"type"`
 	Response AssertionResponse `json:"response"`
 }
 
 type AssertionResponse struct {
-	AuthenticatorData string `json:"authenticatorData"`
-	ClientDataJSON    string `json:"clientDataJSON"`
-	Signature         string `json:"signature"`
-	UserHandle        string `json:"userHandle"`
+	AuthenticatorData URLEncodedBase64 `json:"authenticatorData"`
+	ClientDataJSON    URLEncodedBase64 `json:"clientDataJSON"`
+	Signature         URLEncodedBase64 `json:"signature"`
+	UserHandle        URLEncodedBase64 `json:"userHandle"`
 }
 
 type ctap2TWebauthnToken struct {
@@ -143,7 +141,7 @@ TODO List
 	- handle custom timeout
 	- extensions support
 	- what is collectedClientData.tokenBinding (https://www.w3.org/TR/webauthn/#dom-collectedclientdata-tokenbinding)
-	- Handle multiple authenticator / multiple transports
+	- Handle multiple authenticator / multiple transports ?
 */
 
 var supportedCredentialTypes = map[string]ctap2.CredentialType{
@@ -233,34 +231,9 @@ func (w *ctap2TWebauthnToken) Register(origin string, req *RegisterRequest) (*Re
 		options["rk"] = true
 	}
 
-	var pinProtocol ctap2.PinUVAuthProtocolVersion
-	var pinUVAuth []byte
-	switch req.PublicKey.AuthenticatorSelection.UserVerification {
-	case "discouraged":
-		// Do nothing
-	case "required":
-		pinProtocol = ctap2.PinProtoV1
-		pinUVAuth, err = w.pinHandler.Execute(clientDataHash)
-		if err != nil {
-			return nil, err
-		}
-	case "preferred":
-		infos, err := w.t.GetInfo()
-		if err != nil {
-			return nil, err
-		}
-
-		// Most authenticators seems to set clientPin option to true when the PIN is set
-		// TODO: validate this is a standard way to do that
-		if pin, ok := infos.Options["clientPin"]; ok && pin {
-			pinProtocol = ctap2.PinProtoV1
-			pinUVAuth, err = w.pinHandler.Execute(clientDataHash)
-			if err != nil {
-				return nil, err
-			}
-		}
-	default:
-		return nil, fmt.Errorf("unsupported user verification option %q", req.PublicKey.AuthenticatorSelection.UserVerification)
+	pinUVAuth, pinProtocol, err := w.userVerification(req.PublicKey.AuthenticatorSelection.UserVerification, clientDataHash)
+	if err != nil {
+		return nil, err
 	}
 
 	resp, err := w.t.MakeCredential(&ctap2.MakeCredentialRequest{
@@ -335,46 +308,143 @@ func (w *ctap2TWebauthnToken) Register(origin string, req *RegisterRequest) (*Re
 		},
 	}, nil
 }
-func (w *ctap2TWebauthnToken) Authenticate(req *AuthenticateRequest) (*AuthenticateResponse, error) {
-	panic("not implemented yet")
-	return nil, nil
+
+func (w *ctap2TWebauthnToken) Authenticate(origin string, req *AuthenticateRequest) (*AuthenticateResponse, error) {
+	originURL, err := url.Parse(origin)
+	if err != nil {
+		return nil, fmt.Errorf("webauthn: invalid origin: %w", err)
+	}
+	if originURL.Opaque != "" {
+		return nil, fmt.Errorf("webauthn: invalid opaque origin %q", origin)
+	}
+
+	effectiveDomain := originURL.Hostname() // TODO validate with https://url.spec.whatwg.org/#valid-domain
+
+	// TODO if options.rpId is not a "registrable domain suffix" of and is not equal to effectiveDomain, return error
+	rpID := req.PublicKey.RpID
+
+	if rpID == "" {
+		rpID = effectiveDomain
+	}
+
+	// TODO add support for extensions (bullet point 8 from https://www.w3.org/TR/2020/WD-webauthn-2-20200730/#sctn-discover-from-external-source)
+	clientExtensions := make(map[string]interface{})
+
+	clientData := collectedClientData{
+		Challenge: base64.RawURLEncoding.EncodeToString(req.PublicKey.Challenge),
+		Origin:    fmt.Sprintf("%s://%s", originURL.Scheme, originURL.Host),
+		Type:      "webauthn.get",
+	}
+
+	clientDataJSON, err := json.Marshal(clientData)
+	if err != nil {
+		return nil, err
+	}
+
+	sha := sha256.New()
+	if _, err := sha.Write(clientDataJSON); err != nil {
+		return nil, err
+	}
+	clientDataHash := sha.Sum(nil)
+
+	pinUVAuth, pinProtocol, err := w.userVerification(req.PublicKey.UserVerification, clientDataHash)
+	if err != nil {
+		return nil, err
+	}
+
+	allowList := make([]*ctap2.CredentialDescriptor, 0, len(req.PublicKey.AllowCredentials))
+	for _, c := range req.PublicKey.AllowCredentials {
+		t, ok := supportedCredentialTypes[c.Type]
+		if !ok {
+			return nil, fmt.Errorf("webauthn: unsupported excluded credential type %q", c.Type)
+		}
+
+		allowList = append(allowList, &ctap2.CredentialDescriptor{
+			ID:   c.ID,
+			Type: t,
+		})
+	}
+
+	resp, err := w.t.GetAssertion(&ctap2.GetAssertionRequest{
+		RPID:              rpID,
+		ClientDataHash:    clientDataHash,
+		PinUVAuth:         pinUVAuth,
+		PinUVAuthProtocol: pinProtocol,
+		AllowList:         allowList,
+		Extensions:        clientExtensions,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	userHandle := []byte{}
+	if resp.User != nil {
+		var err error
+		userHandle, err = resp.User.Bytes()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return &AuthenticateResponse{
+		ID:    base64.RawURLEncoding.EncodeToString(resp.Credential.ID),
+		RawID: resp.Credential.ID,
+		Response: AssertionResponse{
+			AuthenticatorData: []byte(resp.AuthData),
+			Signature:         resp.Signature,
+			ClientDataJSON:    clientDataJSON,
+			UserHandle:        userHandle,
+		},
+		Type: "public-key",
+	}, nil
+}
+
+func (w *ctap2TWebauthnToken) userVerification(uv string, clientDataHash []byte) ([]byte, ctap2.PinUVAuthProtocolVersion, error) {
+	infos, err := w.t.GetInfo()
+	if err != nil {
+		return nil, 0, err
+	}
+
+	var pinUVAuth []byte
+	var pinProtocol ctap2.PinUVAuthProtocolVersion
+
+	if uv == "" {
+		uv = "preferred"
+	}
+
+	switch uv {
+	case "discouraged":
+		// Do nothing
+	case "required":
+		if pin, ok := infos.Options["clientPin"]; !ok || !pin {
+			return nil, 0, errors.New("webauthn: authenticator does not support user verification")
+		}
+
+		pinProtocol = ctap2.PinProtoV1
+		pinUVAuth, err = w.pinHandler.Execute(clientDataHash)
+		if err != nil {
+			return nil, 0, err
+		}
+	case "preferred":
+		// Most authenticators seems to set clientPin option to true when the PIN is set
+		// TODO: validate this is a standard way to do that
+		if pin, ok := infos.Options["clientPin"]; ok && pin {
+			pinProtocol = ctap2.PinProtoV1
+			pinUVAuth, err = w.pinHandler.Execute(clientDataHash)
+			if err != nil {
+				return nil, 0, err
+			}
+		}
+	default:
+		return nil, 0, fmt.Errorf("unsupported user verification option %q", uv)
+	}
+
+	return pinUVAuth, pinProtocol, nil
 }
 
 func (w *ctap1WebauthnToken) Register(origin string, req *RegisterRequest) (*RegisterResponse, error) {
 	panic("not implemented yet")
-	return nil, nil
 }
-func (w *ctap1WebauthnToken) Authenticate(req *AuthenticateRequest) (*AuthenticateResponse, error) {
+func (w *ctap1WebauthnToken) Authenticate(origin string, req *AuthenticateRequest) (*AuthenticateResponse, error) {
 	panic("not implemented yet")
-	return nil, nil
-}
-
-// URLEncodedBase64 represents a byte slice holding URL-encoded base64 data.
-// When fields of this type are unmarshaled from JSON, the data is base64
-// decoded into a byte slice.
-type URLEncodedBase64 []byte
-
-// UnmarshalJSON base64 decodes a URL-encoded value, storing the result in the
-// provided byte slice.
-func (dest *URLEncodedBase64) UnmarshalJSON(data []byte) error {
-	// Trim the leading spaces
-	data = bytes.Trim(data, "\"")
-	out := make([]byte, base64.RawURLEncoding.DecodedLen(len(data)))
-	n, err := base64.RawURLEncoding.Decode(out, data)
-	if err != nil {
-		return err
-	}
-
-	v := reflect.ValueOf(dest).Elem()
-	v.SetBytes(out[:n])
-	return nil
-}
-
-// MarshalJSON base64 encodes a non URL-encoded value, storing the result in the
-// provided byte slice.
-func (data URLEncodedBase64) MarshalJSON() ([]byte, error) {
-	if data == nil {
-		return []byte("null"), nil
-	}
-	return []byte(`"` + base64.RawURLEncoding.EncodeToString(data) + `"`), nil
 }

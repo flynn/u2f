@@ -392,6 +392,15 @@ type CredentialUserEntity struct {
 	Icon        string `cbor:"icon,omitempty"`
 }
 
+func (u *CredentialUserEntity) Bytes() ([]byte, error) {
+	enc, err := cbor.CTAP2EncOptions().EncMode()
+	if err != nil {
+		return nil, err
+	}
+
+	return enc.Marshal(u)
+}
+
 type AuthData []byte
 
 const authDataMinLength = 37
