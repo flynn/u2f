@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"net/http"
 	"net/http/httputil"
@@ -14,6 +15,23 @@ import (
 )
 
 func main() {
+	var host string
+	var username string
+
+	flag.StringVar(&username, "u", "", "the username to authenticate with")
+	flag.StringVar(&host, "s", "https://webauthn.io", "the target webauthn server")
+	flag.Parse()
+
+	if username == "" {
+		flag.Usage()
+		panic("username is required")
+	}
+
+	if host == "" {
+		flag.Usage()
+		panic("host is required")
+	}
+
 	devices, err := u2fhid.Devices()
 	if err != nil {
 		panic(err)
@@ -32,7 +50,7 @@ func main() {
 
 		c := &http.Client{}
 		// localhost:9005 runs a server from https://github.com/duo-labs/webauthn.io
-		httpResp, err := c.Get("http://localhost:9005/assertion/aaaa?userVer=discouraged&txAuthExtension=")
+		httpResp, err := c.Get(fmt.Sprintf("%s/assertion/%s?userVer=discouraged&txAuthExtension=", host, username))
 		if err != nil {
 			panic(err)
 		}
@@ -44,7 +62,7 @@ func main() {
 		fmt.Printf("response: %s\n", d)
 
 		if httpResp.StatusCode != 200 {
-			panic("non 200 server response")
+			panic("non 200 server response, maybe register first ?")
 		}
 
 		authReq := &webauthn.AuthenticateRequest{}
@@ -53,9 +71,8 @@ func main() {
 			panic(err)
 		}
 
-		origin := "http://localhost:9005"
-		fmt.Printf("Webauthn authentication request for %q. Confirm presence on authenticator when it will blink...\n", origin)
-		authResp, err := t.Authenticate(origin, authReq)
+		fmt.Printf("Webauthn authentication request for %q on %q. Confirm presence on authenticator when it will blink...\n", username, host)
+		authResp, err := t.Authenticate(host, authReq)
 		if err != nil {
 			panic(err)
 		}
@@ -68,7 +85,7 @@ func main() {
 			panic(err)
 		}
 
-		httpPostReq, err := http.NewRequest("POST", "http://localhost:9005/assertion", buf)
+		httpPostReq, err := http.NewRequest("POST", fmt.Sprintf("%s/assertion", host), buf)
 		if err != nil {
 			panic(err)
 		}
