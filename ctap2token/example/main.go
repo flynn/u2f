@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"os"
 
 	"github.com/flynn/u2f/ctap2token"
 	"github.com/flynn/u2f/ctap2token/pin"
@@ -73,8 +72,7 @@ func main() {
 			if errors.Unwrap(err) != ctap2token.ErrPinRequired {
 				panic(err)
 			}
-			fmt.Print("Enter device PIN: ")
-			pinHandler := pin.NewInteractiveHandler(token, os.Stdin)
+			pinHandler := pin.NewInteractiveHandler(token)
 			pinAuth, err := pinHandler.Execute(clientDataHash)
 			if err != nil {
 				panic(err)

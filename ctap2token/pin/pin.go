@@ -8,8 +8,10 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"fmt"
 	"io"
 	"math/big"
+	"os"
 	"strings"
 
 	"github.com/flynn/u2f/ctap2token"
@@ -30,10 +32,11 @@ var _ PINHandler = (*InteractiveHandler)(nil)
 
 // NewInteractiveHandler returns an interactive PINHandler, which will read
 // the user PIN  from the provided reader
-func NewInteractiveHandler(t *ctap2token.Token, stdin io.Reader) *InteractiveHandler {
+func NewInteractiveHandler(t *ctap2token.Token) *InteractiveHandler {
 	return &InteractiveHandler{
-		token: t,
-		Stdin: stdin,
+		token:  t,
+		Stdin:  os.Stdin,
+		Stdout: os.Stdout,
 	}
 }
 
@@ -41,6 +44,7 @@ func NewInteractiveHandler(t *ctap2token.Token, stdin io.Reader) *InteractiveHan
 // obtain a token from the authenticator which can be used to verify the user.
 // see https://fidoalliance.org/specs/fido-v2.0-ps-20190130/fido-client-to-authenticator-protocol-v2.0-ps-20190130.html#gettingSharedSecret
 func (h *InteractiveHandler) Execute(clientDataHash []byte) (ctap2token.PinUVAuth, error) {
+	fmt.Fprint(h.Stdout, "Enter device PIN: ")
 	reader := bufio.NewReader(h.Stdin)
 	userPIN, err := reader.ReadString('\n')
 	if err != nil {
@@ -57,12 +61,12 @@ func exchangeUserPinToPinAuth(token *ctap2token.Token, userPIN, clientDataHash [
 		return nil, err
 	}
 
-	aGX, aGY, err := getTokenKeyAgreement(token)
+	aGX, aGY, err := GetTokenKeyAgreement(token)
 	if err != nil {
 		return nil, err
 	}
 
-	sharedSecret, err := computeSharedSecret(b, aGX, aGY)
+	sharedSecret, err := ComputeSharedSecret(b, aGX, aGY)
 	if err != nil {
 		return nil, err
 	}
@@ -77,10 +81,10 @@ func exchangeUserPinToPinAuth(token *ctap2token.Token, userPIN, clientDataHash [
 		return nil, err
 	}
 
-	return computePINAuth(pinToken, sharedSecret, clientDataHash)
+	return ComputePINAuth(pinToken, sharedSecret, clientDataHash)
 }
 
-func getTokenKeyAgreement(token *ctap2token.Token) (aGX, aGY *big.Int, err error) {
+func GetTokenKeyAgreement(token *ctap2token.Token) (aGX, aGY *big.Int, err error) {
 	pinResp, err := token.ClientPIN(&ctap2token.ClientPINRequest{
 		PinProtocol: ctap2token.PinProtoV1,
 		SubCommand:  ctap2token.GetKeyAgreement,
@@ -98,7 +102,7 @@ func getTokenKeyAgreement(token *ctap2token.Token) (aGX, aGY *big.Int, err error
 	return aGX, aGY, nil
 }
 
-func computeSharedSecret(b []byte, aGX, aGY *big.Int) ([]byte, error) {
+func ComputeSharedSecret(b []byte, aGX, aGY *big.Int) ([]byte, error) {
 	rX, _ := elliptic.P256().ScalarMult(aGX, aGY, b)
 	sha := sha256.New()
 	_, err := sha.Write(rX.Bytes())
@@ -120,16 +124,20 @@ func hashEncryptPIN(userPIN []byte, sharedSecret []byte) ([]byte, error) {
 	pinHash = pinHash[:aes.BlockSize]
 
 	// encrypt pinHash with AES-CBC using shared secret
-	pinHashEnc := make([]byte, aes.BlockSize)
+	return AESCBCEncrypt(sharedSecret, pinHash)
+}
+
+func AESCBCEncrypt(sharedSecret, data []byte) ([]byte, error) {
+	dataEnc := make([]byte, len(data))
 	c, err := aes.NewCipher(sharedSecret)
 	if err != nil {
 		return nil, err
 	}
 	iv := make([]byte, aes.BlockSize)
 	cbcEnc := cipher.NewCBCEncrypter(c, iv)
-	cbcEnc.CryptBlocks(pinHashEnc, pinHash)
+	cbcEnc.CryptBlocks(dataEnc, data)
 
-	return pinHashEnc, nil
+	return dataEnc, nil
 }
 
 func getPINToken(token *ctap2token.Token, encPinHash []byte, bGX, bGY *big.Int) ([]byte, error) {
@@ -152,9 +160,9 @@ func getPINToken(token *ctap2token.Token, encPinHash []byte, bGX, bGY *big.Int) 
 	return pinResp.PinToken, nil
 }
 
-func computePINAuth(pinToken, sharedSecret, data []byte) ([]byte, error) {
+func ComputePINAuth(pinToken, sharedSecret, data []byte) ([]byte, error) {
 	// decrypt pinToken using AES-CBC with shared secret
-	clearPinToken := make([]byte, aes.BlockSize)
+	clearPinToken := make([]byte, len(data))
 	c, err := aes.NewCipher(sharedSecret)
 	if err != nil {
 		return nil, err

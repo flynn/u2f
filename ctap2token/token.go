@@ -155,6 +155,24 @@ type MakeCredentialResponse struct {
 	AttSmt   map[string]interface{} `cbor:"3,keyasint"`
 }
 
+func (m *MakeCredentialResponse) AttestationObject() ([]byte, error) {
+	enc, err := cbor.CTAP2EncOptions().EncMode()
+	if err != nil {
+		return nil, err
+	}
+
+	// For some reasons, webauthn defines the attestationObject
+	// with string keys, but FIDO2 specs with integer keys.
+	// TODO checks with various server implementation what they support
+	// webauthn.io: string keys
+	att := make(map[string]interface{})
+	att["fmt"] = m.Fmt
+	att["authData"] = m.AuthData
+	att["attSmt"] = m.AttSmt
+
+	return enc.Marshal(att)
+}
+
 func (t *Token) MakeCredential(req *MakeCredentialRequest) (*MakeCredentialResponse, error) {
 	enc, err := cbor.CTAP2EncOptions().EncMode()
 	if err != nil {
@@ -174,7 +192,6 @@ func (t *Token) MakeCredential(req *MakeCredentialRequest) (*MakeCredentialRespo
 	if err != nil {
 		return nil, err
 	}
-
 	respData := &MakeCredentialResponse{}
 	if err := unmarshal(resp, respData); err != nil {
 		return nil, err
@@ -453,6 +470,62 @@ type ParsedAuthData struct {
 	SignCount              uint32
 	AttestedCredentialData *AttestedCredentialData
 	Extensions             AuthenticatorExtensions
+}
+
+func (p *ParsedAuthData) Bytes() ([]byte, error) {
+	enc, err := cbor.CTAP2EncOptions().EncMode()
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]byte, 0, authDataMinLength)
+	out = append(out, p.RPIDHash...)
+
+	var flag byte
+	if p.Flags.UserPresent {
+		flag |= authDataFlagUP
+	}
+	if p.Flags.UserVerified {
+		flag |= authDataFlagUV
+	}
+	if p.Flags.AttestedCredentialData {
+		flag |= authDataFlagAT
+	}
+	if p.Flags.HasExtensions {
+		flag |= authDataFlagED
+	}
+	out = append(out, flag)
+
+	signCount := make([]byte, 4)
+	binary.BigEndian.PutUint32(signCount, p.SignCount)
+	out = append(out, signCount...)
+
+	if p.Flags.AttestedCredentialData {
+		out = append(out, p.AttestedCredentialData.AAGUID...)
+
+		credIDLen := make([]byte, 2)
+		binary.BigEndian.PutUint16(credIDLen, uint16(len(p.AttestedCredentialData.CredentialID)))
+
+		out = append(out, credIDLen...)
+		out = append(out, p.AttestedCredentialData.CredentialID...)
+
+		pubkey, err := enc.Marshal(p.AttestedCredentialData.CredentialPublicKey)
+		if err != nil {
+			return nil, err
+		}
+
+		out = append(out, pubkey...)
+	}
+
+	if p.Flags.HasExtensions {
+		exts, err := enc.Marshal(p.Extensions)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, exts...)
+	}
+
+	return out, nil
 }
 
 const (
