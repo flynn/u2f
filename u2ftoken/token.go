@@ -3,6 +3,8 @@
 package u2ftoken
 
 import (
+	"crypto/x509"
+	"encoding/asn1"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -66,11 +68,18 @@ type RegisterRequest struct {
 	Application []byte
 }
 
+type RegisterResponse struct {
+	UserPublicKey          []byte
+	KeyHandle              []byte
+	AttestationCertificate *x509.Certificate
+	Signature              []byte
+}
+
 // Register registers an application with the token and returns the raw
 // registration response message to be passed to the relying party. It returns
 // ErrPresenceRequired if the call should be retried after proof of user
 // presence is provided to the token.
-func (t *Token) Register(req RegisterRequest) ([]byte, error) {
+func (t *Token) Register(req RegisterRequest) (*RegisterResponse, error) {
 	if len(req.Challenge) != 32 {
 		return nil, fmt.Errorf("u2ftoken: Challenge must be exactly 32 bytes")
 	}
@@ -96,7 +105,32 @@ func (t *Token) Register(req RegisterRequest) ([]byte, error) {
 		}
 	}
 
-	return res.Data, nil
+	userPubKey := res.Data[1:66]
+
+	khLen := int(res.Data[66])
+	keyHandle := res.Data[67 : 67+khLen]
+
+	remaining := res.Data[67+khLen:]
+
+	rawCert := new(asn1.RawValue)
+	sig, err := asn1.Unmarshal(remaining, rawCert)
+	if err != nil {
+		return nil, err
+	}
+
+	cert, err := x509.ParseCertificate(rawCert.FullBytes)
+	if err != nil {
+		return nil, err
+	}
+
+	registerRes := &RegisterResponse{
+		UserPublicKey:          userPubKey,
+		KeyHandle:              keyHandle,
+		AttestationCertificate: cert,
+		Signature:              sig,
+	}
+
+	return registerRes, nil
 }
 
 // An AuthenticateRequires is a message used for authenticating to a relying party
