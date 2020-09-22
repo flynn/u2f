@@ -15,15 +15,13 @@ import (
 	"github.com/flynn/u2f/u2ftoken"
 )
 
-var DefaultRegisterTimeout = 60
+var DefaultCTAP1Timeout = 60
 
 type ctap1WebauthnToken struct {
 	t *u2ftoken.Token
 }
 
 func (w *ctap1WebauthnToken) Register(origin string, req *RegisterRequest) (*RegisterResponse, error) {
-	// TODO implement spec checks
-
 	originURL, err := url.Parse(origin)
 	if err != nil {
 		return nil, fmt.Errorf("webauthn: invalid origin: %w", err)
@@ -88,7 +86,7 @@ func (w *ctap1WebauthnToken) Register(origin string, req *RegisterRequest) (*Reg
 	clientDataHash := sha.Sum(nil)
 
 	if req.Timeout == 0 {
-		req.Timeout = DefaultRegisterTimeout
+		req.Timeout = DefaultCTAP1Timeout
 	}
 
 	resp, err := w.registerWithTimeout(&u2ftoken.RegisterRequest{
@@ -148,7 +146,92 @@ func (w *ctap1WebauthnToken) Register(origin string, req *RegisterRequest) (*Reg
 }
 
 func (w *ctap1WebauthnToken) Authenticate(origin string, req *AuthenticateRequest) (*AuthenticateResponse, error) {
-	panic("not implemented yet")
+	originURL, err := url.Parse(origin)
+	if err != nil {
+		return nil, fmt.Errorf("webauthn: invalid origin: %w", err)
+	}
+	if originURL.Opaque != "" {
+		return nil, fmt.Errorf("webauthn: invalid opaque origin %q", origin)
+	}
+
+	effectiveDomain := originURL.Hostname()
+	rpID := req.RpID
+	if rpID == "" {
+		rpID = effectiveDomain
+	}
+
+	if len(req.AllowCredentials) == 0 {
+		return nil, errors.New("webauthn: ctap1 require at least one credential")
+	}
+	if req.UserVerification == "required" {
+		return nil, errors.New("webauthn: ctap1 does not support user verification")
+	}
+
+	if req.Timeout == 0 {
+		req.Timeout = DefaultCTAP1Timeout
+	}
+
+	sha := sha256.New()
+	if _, err := sha.Write([]byte(rpID)); err != nil {
+		return nil, err
+	}
+	rpIDHash := sha.Sum(nil)
+
+	clientData := collectedClientData{
+		Challenge: base64.RawURLEncoding.EncodeToString(req.Challenge),
+		Origin:    fmt.Sprintf("%s://%s", originURL.Scheme, originURL.Host),
+		Type:      "webauthn.get",
+	}
+
+	clientDataJSON, err := json.Marshal(clientData)
+	if err != nil {
+		return nil, err
+	}
+
+	sha.Reset()
+	if _, err := sha.Write(clientDataJSON); err != nil {
+		return nil, err
+	}
+	clientDataHash := sha.Sum(nil)
+
+	var authReq *u2ftoken.AuthenticateRequest
+	if len(req.AllowCredentials) > 1 {
+		for _, cred := range req.AllowCredentials {
+			authReq = &u2ftoken.AuthenticateRequest{
+				Challenge:   clientDataHash,
+				Application: rpIDHash,
+				KeyHandle:   cred.ID,
+			}
+			if err := w.t.CheckAuthenticate(*authReq); err == nil {
+				break
+			}
+		}
+	} else {
+		authReq = &u2ftoken.AuthenticateRequest{
+			Challenge:   clientDataHash,
+			Application: rpIDHash,
+			KeyHandle:   req.AllowCredentials[0].ID,
+		}
+	}
+
+	authResp, err := w.authenticateWithTimeout(authReq, time.Duration(req.Timeout))
+	if err != nil {
+		return nil, err
+	}
+
+	authData := make([]byte, 37)
+	copy(authData, rpIDHash)
+	authData[32] = authResp.RawResponse[0]
+	binary.BigEndian.PutUint32(authData[33:], authResp.Counter)
+
+	return &AuthenticateResponse{
+		ID: authReq.KeyHandle,
+		Response: AssertionResponse{
+			AuthenticatorData: authData,
+			Signature:         authResp.Signature,
+			ClientDataJSON:    clientDataJSON,
+		},
+	}, nil
 }
 
 func (w *ctap1WebauthnToken) registerWithTimeout(req *u2ftoken.RegisterRequest, timeout time.Duration) (*u2ftoken.RegisterResponse, error) {
@@ -158,6 +241,25 @@ func (w *ctap1WebauthnToken) registerWithTimeout(req *u2ftoken.RegisterRequest, 
 			return nil, u2ftoken.ErrPresenceRequired
 		default:
 			resp, err := w.t.Register(*req)
+			if err != nil {
+				if err != u2ftoken.ErrPresenceRequired {
+					return nil, err
+				}
+				time.Sleep(200 * time.Millisecond)
+			} else {
+				return resp, nil
+			}
+		}
+	}
+}
+
+func (w *ctap1WebauthnToken) authenticateWithTimeout(req *u2ftoken.AuthenticateRequest, timeout time.Duration) (*u2ftoken.AuthenticateResponse, error) {
+	for {
+		select {
+		case <-time.After(timeout * time.Second):
+			return nil, u2ftoken.ErrPresenceRequired
+		default:
+			resp, err := w.t.Authenticate(*req)
 			if err != nil {
 				if err != u2ftoken.ErrPresenceRequired {
 					return nil, err
