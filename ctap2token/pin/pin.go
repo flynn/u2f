@@ -14,6 +14,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/flynn/u2f/crypto"
 	"github.com/flynn/u2f/ctap2token"
 )
 
@@ -143,12 +144,12 @@ func AESCBCEncrypt(sharedSecret, data []byte) ([]byte, error) {
 func getPINToken(token *ctap2token.Token, encPinHash []byte, bGX, bGY *big.Int) ([]byte, error) {
 	pinResp, err := token.ClientPIN(&ctap2token.ClientPINRequest{
 		SubCommand: ctap2token.GetPINUvAuthTokenUsingPIN,
-		KeyAgreement: &ctap2token.COSEKey{
+		KeyAgreement: &crypto.COSEKey{
 			X:       bGX.Bytes(),
 			Y:       bGY.Bytes(),
-			KeyType: ctap2token.EC2,
-			Curve:   ctap2token.P256,
-			Alg:     ctap2token.ECDHES_HKDF256,
+			KeyType: crypto.EC2,
+			Curve:   crypto.P256,
+			Alg:     crypto.ECDHES_HKDF256,
 		},
 		PinHashEnc:  encPinHash,
 		PinProtocol: ctap2token.PinProtoV1,

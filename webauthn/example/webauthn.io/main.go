@@ -75,7 +75,7 @@ func main() {
 func register(t webauthn.Token, username, host string) error {
 	c := &http.Client{}
 
-	httpResp, err := c.Get(fmt.Sprintf("%s/makeCredential/%s?attType=none&authType=&userVerification=preferred&residentKeyRequirement=false&txAuthExtension=", host, username))
+	httpResp, err := c.Get(fmt.Sprintf("%s/makeCredential/%s?attType=direct&authType=&userVerification=preferred&residentKeyRequirement=false&txAuthExtension=", host, username))
 	if err != nil {
 		return err
 	}

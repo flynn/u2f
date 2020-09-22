@@ -3,7 +3,6 @@
 package u2ftoken
 
 import (
-	"crypto/x509"
 	"encoding/asn1"
 	"encoding/binary"
 	"errors"
@@ -71,7 +70,7 @@ type RegisterRequest struct {
 type RegisterResponse struct {
 	UserPublicKey          []byte
 	KeyHandle              []byte
-	AttestationCertificate *x509.Certificate
+	AttestationCertificate []byte
 	Signature              []byte
 }
 
@@ -118,15 +117,10 @@ func (t *Token) Register(req RegisterRequest) (*RegisterResponse, error) {
 		return nil, err
 	}
 
-	cert, err := x509.ParseCertificate(rawCert.FullBytes)
-	if err != nil {
-		return nil, err
-	}
-
 	registerRes := &RegisterResponse{
 		UserPublicKey:          userPubKey,
 		KeyHandle:              keyHandle,
-		AttestationCertificate: cert,
+		AttestationCertificate: rawCert.FullBytes,
 		Signature:              sig,
 	}
 

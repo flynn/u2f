@@ -75,7 +75,7 @@ func (m AttestationObject) CBOREncode(keyAsInt bool) ([]byte, error) {
 	if !keyAsInt {
 		att := make(map[string]interface{})
 		att["fmt"] = m.Fmt
-		att["attSmt"] = m.AttSmt
+		att["attStmt"] = m.AttSmt
 		att["authData"] = m.AuthData
 		return enc.Marshal(att)
 	}

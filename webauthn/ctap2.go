@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/url"
 
+	"github.com/flynn/u2f/crypto"
 	ctap2 "github.com/flynn/u2f/ctap2token"
 	"github.com/flynn/u2f/ctap2token/pin"
 )
@@ -43,7 +44,7 @@ func (w *ctap2TWebauthnToken) Register(origin string, req *RegisterRequest) (*Re
 
 		credTypesAndPubKeyAlgs = append(credTypesAndPubKeyAlgs, ctap2.CredentialParam{
 			Type: t,
-			Alg:  ctap2.Alg(cp.Alg),
+			Alg:  crypto.Alg(cp.Alg),
 		})
 	}
 

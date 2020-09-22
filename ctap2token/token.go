@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/flynn/u2f/crypto"
 	"github.com/fxamacker/cbor/v2"
 )
 
@@ -271,18 +272,18 @@ func (t *Token) GetInfo() (*GetInfoResponse, error) {
 type ClientPINRequest struct {
 	PinProtocol  PinUVAuthProtocolVersion `cbor:"1,keyasint"`
 	SubCommand   ClientPinSubCommand      `cbor:"2,keyasint"`
-	KeyAgreement *COSEKey                 `cbor:"3,keyasint,omitempty"`
+	KeyAgreement *crypto.COSEKey          `cbor:"3,keyasint,omitempty"`
 	PinAuth      []byte                   `cbor:"4,keyasint,omitempty"`
 	NewPinEnc    []byte                   `cbor:"5,keyasint,omitempty"`
 	PinHashEnc   []byte                   `cbor:"6,keyasint,omitempty"`
 }
 
 type ClientPINResponse struct {
-	KeyAgreement    *COSEKey `cbor:"1,keyasint,omitempty"`
-	PinToken        []byte   `cbor:"2,keyasint,omitempty"`
-	Retries         uint     `cbor:"3,keyasint,omitempty"`
-	PowerCycleState bool     `cbor:"4,keyasint,omitempty"`
-	UVRetries       uint     `cbor:"5,keyasint,omitempty"`
+	KeyAgreement    *crypto.COSEKey `cbor:"1,keyasint,omitempty"`
+	PinToken        []byte          `cbor:"2,keyasint,omitempty"`
+	Retries         uint            `cbor:"3,keyasint,omitempty"`
+	PowerCycleState bool            `cbor:"4,keyasint,omitempty"`
+	UVRetries       uint            `cbor:"5,keyasint,omitempty"`
 }
 
 func (t *Token) ClientPIN(req *ClientPINRequest) (*ClientPINResponse, error) {
@@ -417,7 +418,7 @@ func (a AuthData) Parse() (*ParsedAuthData, error) {
 
 		// a[55+credIDLen:] may contains the COSEKey + extensions map
 		// but the decoder will only read the key and silently drop extensions data.
-		out.AttestedCredentialData.CredentialPublicKey = &COSEKey{}
+		out.AttestedCredentialData.CredentialPublicKey = &crypto.COSEKey{}
 		if err := cbor.Unmarshal(a[55+credIDLen:], out.AttestedCredentialData.CredentialPublicKey); err != nil {
 			return nil, err
 		}
@@ -540,18 +541,18 @@ type AuthDataFlag struct {
 type AttestedCredentialData struct {
 	AAGUID              []byte // 16 bytes ID for the authenticator
 	CredentialID        []byte
-	CredentialPublicKey *COSEKey
+	CredentialPublicKey *crypto.COSEKey
 }
 
 type CredentialParam struct {
 	Type CredentialType `cbor:"type"`
-	Alg  Alg            `cbor:"alg"`
+	Alg  crypto.Alg     `cbor:"alg"`
 }
 
 var (
-	PublicKeyRS256 CredentialParam = CredentialParam{Type: PublicKey, Alg: RS256}
-	PublicKeyPS256 CredentialParam = CredentialParam{Type: PublicKey, Alg: PS256}
-	PublicKeyES256 CredentialParam = CredentialParam{Type: PublicKey, Alg: ES256}
+	PublicKeyRS256 CredentialParam = CredentialParam{Type: PublicKey, Alg: crypto.RS256}
+	PublicKeyPS256 CredentialParam = CredentialParam{Type: PublicKey, Alg: crypto.PS256}
+	PublicKeyES256 CredentialParam = CredentialParam{Type: PublicKey, Alg: crypto.ES256}
 )
 
 // CredentialType defines the type of credential, as defined in https://www.w3.org/TR/webauthn/#credentialType
@@ -559,17 +560,6 @@ type CredentialType string
 
 const (
 	PublicKey CredentialType = "public-key"
-)
-
-// Alg must be the value of one of the algorithms registered on
-// https://www.iana.org/assignments/cose/cose.xhtml#algorithms.
-type Alg int
-
-const (
-	RS256          Alg = -257 // RSASSA-PKCS1-v1_5 using SHA-256
-	PS256          Alg = -37  // RSASSA-PSS w/ SHA-256
-	ECDHES_HKDF256 Alg = -25  // ECDH-ES + HKDF-256
-	ES256          Alg = -7   // ECDSA w/ SHA-256
 )
 
 // CredentialDescriptor defines a credential returned by the authenticator,
@@ -617,56 +607,4 @@ const (
 	GetPINUvAuthTokenUsingPIN ClientPinSubCommand = 0x05
 	GetPINUvAuthTokenUsingUv  ClientPinSubCommand = 0x06
 	GetUVRetries              ClientPinSubCommand = 0x07
-)
-
-// COSEKey, as defined per https://tools.ietf.org/html/rfc8152#section-7.1
-// Only support Elliptic Curve Public keys for now.
-// TODO: find a way to support all key types defined in the RFC
-type COSEKey struct {
-	Y     []byte    `cbor:"-3,keyasint,omitempty"`
-	X     []byte    `cbor:"-2,keyasint,omitempty"`
-	Curve CurveType `cbor:"-1,keyasint,omitempty"`
-
-	KeyType KeyType        `cbor:"1,keyasint"`
-	KeyID   []byte         `cbor:"2,keyasint,omitempty"`
-	Alg     Alg            `cbor:"3,keyasint,omitempty"`
-	KeyOps  []KeyOperation `cbor:"4,keyasint,omitempty"`
-	BaseIV  []byte         `cbor:"5,keyasint,omitempty"`
-}
-
-// KeyType defines a key type from https://tools.ietf.org/html/rfc8152#section-13
-type KeyType int
-
-const (
-	// OKP means Octet Key Pair
-	OKP KeyType = 0x01
-	// EC2 means Elliptic Curve Keys
-	EC2 KeyType = 0x02
-)
-
-type CurveType int
-
-const (
-	P256    CurveType = 0x01
-	P384    CurveType = 0x02
-	P521    CurveType = 0x03
-	X25519  CurveType = 0x04
-	X448    CurveType = 0x05
-	Ed25519 CurveType = 0x06
-	Ed448   CurveType = 0x07
-)
-
-type KeyOperation int
-
-const (
-	Sign KeyOperation = iota + 1
-	Verify
-	Encrypt
-	Decrypt
-	WrapKey
-	UnwrapKey
-	DeriveKey
-	DeriveBits
-	MACCreate
-	MACVerify
 )
