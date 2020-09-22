@@ -209,23 +209,18 @@ func (w *ctap1WebauthnToken) Authenticate(origin string, req *AuthenticateReques
 	}
 	clientDataHash := sha.Sum(nil)
 
-	var authReq *u2ftoken.AuthenticateRequest
+	authReq := &u2ftoken.AuthenticateRequest{
+		Challenge:   clientDataHash,
+		Application: rpIDHash,
+		KeyHandle:   req.AllowCredentials[0].ID,
+	}
+
 	if len(req.AllowCredentials) > 1 {
 		for _, cred := range req.AllowCredentials {
-			authReq = &u2ftoken.AuthenticateRequest{
-				Challenge:   clientDataHash,
-				Application: rpIDHash,
-				KeyHandle:   cred.ID,
-			}
+			authReq.KeyHandle = cred.ID
 			if err := w.t.CheckAuthenticate(*authReq); err == nil {
 				break
 			}
-		}
-	} else {
-		authReq = &u2ftoken.AuthenticateRequest{
-			Challenge:   clientDataHash,
-			Application: rpIDHash,
-			KeyHandle:   req.AllowCredentials[0].ID,
 		}
 	}
 
