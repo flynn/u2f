@@ -155,24 +155,6 @@ type MakeCredentialResponse struct {
 	AttSmt   map[string]interface{} `cbor:"3,keyasint"`
 }
 
-func (m *MakeCredentialResponse) AttestationObject() ([]byte, error) {
-	enc, err := cbor.CTAP2EncOptions().EncMode()
-	if err != nil {
-		return nil, err
-	}
-
-	// For some reasons, webauthn defines the attestationObject
-	// with string keys, but FIDO2 specs with integer keys.
-	// TODO checks with various server implementation what they support
-	// webauthn.io: string keys
-	att := make(map[string]interface{})
-	att["fmt"] = m.Fmt
-	att["authData"] = m.AuthData
-	att["attSmt"] = m.AttSmt
-
-	return enc.Marshal(att)
-}
-
 func (t *Token) MakeCredential(req *MakeCredentialRequest) (*MakeCredentialResponse, error) {
 	enc, err := cbor.CTAP2EncOptions().EncMode()
 	if err != nil {
@@ -407,7 +389,7 @@ const authDataMinLength = 37
 
 func (a AuthData) Parse() (*ParsedAuthData, error) {
 	if len(a) < authDataMinLength {
-		return nil, errors.New("ctap2token: invalid authData")
+		return nil, fmt.Errorf("ctap2token: authData too short, got %d bytes, want at least %d", len(a), authDataMinLength)
 	}
 
 	out := &ParsedAuthData{
