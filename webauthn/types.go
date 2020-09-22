@@ -18,6 +18,12 @@ type Device interface {
 	u2ftoken.Device
 }
 
+type ExcludedCredential struct {
+	Type       string   `json:"type"`
+	ID         []byte   `json:"id"`
+	Transports []string `json:"transports"`
+}
+
 type RegisterRequest struct {
 	Challenge []byte `json:"challenge"`
 	Rp        struct {
@@ -35,11 +41,7 @@ type RegisterRequest struct {
 		Type string `json:"type"`
 		Alg  int    `json:"alg"`
 	} `json:"pubKeyCredParams"`
-	ExcludeCredentials []struct {
-		Type       string   `json:"type"`
-		ID         []byte   `json:"id"`
-		Transports []string `json:"transports"`
-	} `json:"excludeCredentials"`
+	ExcludeCredentials     []ExcludedCredential `json:"excludeCredentials"`
 	AuthenticatorSelection struct {
 		AuthenticatorAttachment string `json:"authenticatorAttachment"`
 		RequireResidentKey      bool   `json:"requireResidentKey"`
@@ -83,14 +85,16 @@ func (m AttestationObject) CBOREncode(keyAsInt bool) ([]byte, error) {
 	return enc.Marshal(m)
 }
 
+type AllowedCredential struct {
+	Type string `json:"type"`
+	ID   []byte `json:"id"`
+}
+
 type AuthenticateRequest struct {
-	Challenge        []byte `json:"challenge"`
-	Timeout          int    `json:"timeout"`
-	RpID             string `json:"rpId"`
-	AllowCredentials []struct {
-		Type string `json:"type"`
-		ID   []byte `json:"id"`
-	} `json:"allowCredentials"`
+	Challenge        []byte                 `json:"challenge"`
+	Timeout          int                    `json:"timeout"`
+	RpID             string                 `json:"rpId"`
+	AllowCredentials []AllowedCredential    `json:"allowCredentials"`
 	UserVerification string                 `json:"userVerification"`
 	Extensions       map[string]interface{} `json:"extensions"`
 }

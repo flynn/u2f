@@ -53,16 +53,6 @@ func (w *ctap1WebauthnToken) Register(origin string, req *RegisterRequest) (*Reg
 		return nil, errors.New("webauth: ctap1 protocol does not support required user verification")
 	}
 
-	// TODO: If the excludeList is not empty, the platform must send signing request with
-	// check-only control byte to the CTAP1/U2F authenticator using each of
-	// the credential ids (key handles) in the excludeList.
-	// If any of them does not result in an error, that means that this is a known device.
-	// Afterwards, the platform must still send a dummy registration request (with a dummy appid and invalid challenge)
-	// to CTAP1/U2F authenticators that it believes are excluded. This makes it so the user still needs to touch
-	// the CTAP1/U2F authenticator before the RP gets told that the token is already registered.
-	//for _, exCred := range req.ExcludeCredentials {
-	//}
-
 	sha := sha256.New()
 	if _, err := sha.Write([]byte(rpID)); err != nil {
 		return nil, err
@@ -85,6 +75,27 @@ func (w *ctap1WebauthnToken) Register(origin string, req *RegisterRequest) (*Reg
 	}
 	clientDataHash := sha.Sum(nil)
 
+	// If the excludeList is not empty, the platform must send signing request with
+	// check-only control byte to the CTAP1/U2F authenticator using each of
+	// the credential ids (key handles) in the excludeList.
+	// If any of them does not result in an error, that means that this is a known device.
+	// Afterwards, the platform must still send a dummy registration request (with a dummy appid and invalid challenge)
+	// to CTAP1/U2F authenticators that it believes are excluded. This makes it so the user still needs to touch
+	// the CTAP1/U2F authenticator before the RP gets told that the token is already registered.
+	var errCredentialExcluded error
+	for _, excludedCred := range req.ExcludeCredentials {
+		if err := w.t.CheckAuthenticate(u2ftoken.AuthenticateRequest{
+			Application: rpIDHash,
+			Challenge:   clientDataHash,
+			KeyHandle:   excludedCred.ID,
+		}); err != u2ftoken.ErrUnknownKeyHandle {
+			rpIDHash = make([]byte, 32)
+			clientDataHash = make([]byte, 32)
+			errCredentialExcluded = errors.New("webauthn: excluded credential")
+			break
+		}
+	}
+
 	if req.Timeout == 0 {
 		req.Timeout = DefaultCTAP1Timeout
 	}
@@ -95,6 +106,10 @@ func (w *ctap1WebauthnToken) Register(origin string, req *RegisterRequest) (*Reg
 	}, time.Duration(req.Timeout))
 	if err != nil {
 		return nil, err
+	}
+
+	if errCredentialExcluded != nil {
+		return nil, errCredentialExcluded
 	}
 
 	authData := make([]byte, 37)
