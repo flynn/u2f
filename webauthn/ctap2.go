@@ -42,7 +42,7 @@ func (w *ctap2WebauthnToken) Register(req *RegisterRequest, p *RequestParams) (*
 		return nil, errors.New("webauthn: credential parameters not supported")
 	}
 
-	// TODO add support for extensions (bullet point 11 and 12 from https://www.w3.org/TR/webauthn/#createCredential)
+	// TODO add support for extensions (bullet points 11 and 12 from https://www.w3.org/TR/webauthn/#createCredential)
 	clientExtensions := make(map[string]interface{})
 
 	clientDataJSON, clientDataHash, err := p.ClientData.EncodeAndHash()

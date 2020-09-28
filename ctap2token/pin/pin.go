@@ -19,6 +19,11 @@ import (
 	"github.com/flynn/u2f/ctap2token"
 )
 
+const (
+	PinLengthMin = 4
+	PinLengthMax = 63
+)
+
 type PINHandler interface {
 	ReadPIN() ([]byte, error)
 	SetPIN(token *ctap2token.Token) ([]byte, error)
@@ -59,11 +64,13 @@ func (h *InteractiveHandler) SetPIN(token *ctap2token.Token) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if l := len(userPIN); l < 4 || l >= 64 {
-		return nil, errors.New("invalid pin, must be between 4 to 63 characters")
+
+	// checks from https://fidoalliance.org/specs/fido2/fido-client-to-authenticator-protocol-v2.1-rd-20191217.html#client-pin-uv-support
+	if l := len(userPIN); l < PinLengthMin || l > PinLengthMax {
+		return nil, errors.New("invalid pin, must be between 4 to 63 bytes")
 	}
 	if userPIN[len(userPIN)-1] == 0 {
-		return nil, errors.New("invalid pin, must not end with a 0x00 byte")
+		return nil, errors.New("invalid pin, must not end with a NUL byte")
 	}
 	_, err = fmt.Fprint(h.Stdout, "confirm new device PIN: ")
 	if err != nil {
@@ -74,7 +81,7 @@ func (h *InteractiveHandler) SetPIN(token *ctap2token.Token) ([]byte, error) {
 		return nil, err
 	}
 	if !bytes.Equal(userPIN, confirmPIN) {
-		return nil, errors.New("pin mismatch")
+		return nil, errors.New("pin confirmation mismatch")
 	}
 
 	aGX, aGY, err := getTokenKeyAgreement(token)

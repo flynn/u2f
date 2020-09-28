@@ -32,7 +32,8 @@ func main() {
 
 		infos, err := token.GetInfo()
 		if err != nil {
-			panic(err)
+			fmt.Printf("failed to retrieve token info (%v), is the token supporting CTAP2 ?\n", err)
+			continue
 		}
 		fmt.Printf("Token infos:\n%#v\n", infos)
 

@@ -17,8 +17,13 @@ import (
 // DefaultResponseTimeout is the default timeout, in seconds, waiting for a response from a device
 var DefaultResponseTimeout = 60
 
-// DefaultDeviceSelectionTimeout is the default timeout, in seconds, waiting for the user to select a device
-var DefaultDeviceSelectionTimeout = 60
+var (
+	// DefaultDeviceSelectionTimeout is the default timeout, in seconds, waiting for the user to select a device
+	DefaultDeviceSelectionTimeout = 30
+	// MaxAllowedResponseTimeout defines the maximum response timeout, in seconds.
+	// When exceeding, the timeout will be forced to this value.
+	MaxAllowedResponseTimeout = 120
+)
 
 var emptyAAGUID = make([]byte, 16)
 
@@ -71,13 +76,17 @@ func (a *Webauthn) Register(origin string, req *RegisterRequest) (*RegisterRespo
 		return nil, fmt.Errorf("webauthn: invalid opaque origin %q", origin)
 	}
 
+	if req.Timeout <= 0 {
+		req.Timeout = DefaultResponseTimeout
+	}
+	if req.Timeout > MaxAllowedResponseTimeout {
+		req.Timeout = MaxAllowedResponseTimeout
+	}
+
 	if req.Rp.ID == "" {
 		req.Rp.ID = originURL.Hostname()
 	}
-
-	if req.Timeout == 0 {
-		req.Timeout = DefaultResponseTimeout
-	}
+	// TODO check RP ID is a valid domain (https://www.w3.org/TR/webauthn/#CreateCred-DetermineRpId)
 
 	authenticators, userPIN, err := a.selectAuthenticators(req.AuthenticatorSelection)
 	if err != nil {
@@ -143,13 +152,17 @@ func (a *Webauthn) Authenticate(origin string, req *AuthenticateRequest) (*Authe
 		return nil, fmt.Errorf("webauthn: invalid opaque origin %q", origin)
 	}
 
+	if req.Timeout <= 0 {
+		req.Timeout = DefaultResponseTimeout
+	}
+	if req.Timeout > MaxAllowedResponseTimeout {
+		req.Timeout = MaxAllowedResponseTimeout
+	}
+
 	if req.RpID == "" {
 		req.RpID = originURL.Hostname()
 	}
-
-	if req.Timeout == 0 {
-		req.Timeout = DefaultResponseTimeout
-	}
+	// TODO check RP ID is a valid domain (https://www.w3.org/TR/webauthn/#CreateCred-DetermineRpId)
 
 	authenticators, userPIN, err := a.selectAuthenticators(AuthenticatorSelection{
 		UserVerification: req.UserVerification,

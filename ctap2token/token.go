@@ -121,10 +121,12 @@ var ctapErrors = map[byte]error{
 }
 
 type Device interface {
-	// CBOR sends a CBOR encoded message to the device and returns the response.
+	// CBOR sends a CTAP2 CBOR encoded message to the device and returns the response.
 	CBOR(data []byte) ([]byte, error)
+	// Message sends a CTAP1 message to the device and returns the response.
 	Message(data []byte) ([]byte, error)
 	Init() error
+	// SetResponseTimeout allow to control the maximum time to wait for the device response
 	SetResponseTimeout(timeout time.Duration)
 }
 
@@ -283,6 +285,18 @@ type ClientPINRequest struct {
 	NewPinEnc    []byte                   `cbor:"5,keyasint,omitempty"`
 	PinHashEnc   []byte                   `cbor:"6,keyasint,omitempty"`
 }
+
+type ClientPinSubCommand uint
+
+const (
+	GetPINRetries             ClientPinSubCommand = 0x01
+	GetKeyAgreement           ClientPinSubCommand = 0x02
+	SetPIN                    ClientPinSubCommand = 0x03
+	ChangePIN                 ClientPinSubCommand = 0x04
+	GetPINUvAuthTokenUsingPIN ClientPinSubCommand = 0x05
+	GetPINUvAuthTokenUsingUv  ClientPinSubCommand = 0x06
+	GetUVRetries              ClientPinSubCommand = 0x07
+)
 
 type ClientPINResponse struct {
 	KeyAgreement    *crypto.COSEKey `cbor:"1,keyasint,omitempty"`
@@ -632,16 +646,4 @@ type PinUVAuthProtocolVersion uint
 
 const (
 	PinProtoV1 PinUVAuthProtocolVersion = 1
-)
-
-type ClientPinSubCommand uint
-
-const (
-	GetPINRetries             ClientPinSubCommand = 0x01
-	GetKeyAgreement           ClientPinSubCommand = 0x02
-	SetPIN                    ClientPinSubCommand = 0x03
-	ChangePIN                 ClientPinSubCommand = 0x04
-	GetPINUvAuthTokenUsingPIN ClientPinSubCommand = 0x05
-	GetPINUvAuthTokenUsingUv  ClientPinSubCommand = 0x06
-	GetUVRetries              ClientPinSubCommand = 0x07
 )
