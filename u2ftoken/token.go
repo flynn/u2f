@@ -3,10 +3,12 @@
 package u2ftoken
 
 import (
+	"context"
 	"encoding/asn1"
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"time"
 )
 
 const (
@@ -24,11 +26,28 @@ const (
 
 	statusNoError                = 0x9000
 	statusWrongLength            = 0x6700
-	statusInvalidData            = 0x6984
 	statusConditionsNotSatisfied = 0x6985
 	statusWrongData              = 0x6a80
+	statusClaNotSupported        = 0x6e00
 	statusInsNotSupported        = 0x6d00
 )
+
+var (
+	ErrUnknownReason          = errors.New("unkown reason")
+	ErrWrongLength            = errors.New("the length of the request was invalid")
+	ErrConditionsNotSatisfied = errors.New("the request was rejected due to test-of-user-presence being required")
+	ErrWrongData              = errors.New("the request was rejected due to an invalid key handle")
+	ErrCLANotSupported        = errors.New("the class byte of the request is not supported")
+	ErrInsNotSupported        = errors.New("the instruction of the request is not supported")
+)
+
+var errorMessages = map[uint16]error{
+	statusWrongLength:            ErrWrongLength,
+	statusConditionsNotSatisfied: ErrConditionsNotSatisfied,
+	statusWrongData:              ErrWrongData,
+	statusClaNotSupported:        ErrCLANotSupported,
+	statusInsNotSupported:        ErrInsNotSupported,
+}
 
 // ErrPresenceRequired is returned by Register and Authenticate if proof of user
 // presence must be provide before the operation can be retried successfully.
@@ -43,6 +62,8 @@ var ErrUnknownKeyHandle = errors.New("u2ftoken: unknown key handle")
 type Device interface {
 	// Message sends a message to the device and returns the response.
 	Message(data []byte) ([]byte, error)
+	Init() error
+	SetResponseTimeout(timeout time.Duration)
 }
 
 // NewToken returns a token that will use Device to communicate with the device.
@@ -86,10 +107,12 @@ func (t *Token) Register(req RegisterRequest) (*RegisterResponse, error) {
 		return nil, fmt.Errorf("u2ftoken: Application must be exactly 32 bytes")
 	}
 
+	data := append(req.Challenge, req.Application...)
+
 	res, err := t.Message(Request{
 		Param1:  authEnforce,
 		Command: cmdRegister,
-		Data:    append(req.Challenge, req.Application...),
+		Data:    data,
 	})
 	if err != nil {
 		return nil, err
@@ -100,7 +123,11 @@ func (t *Token) Register(req RegisterRequest) (*RegisterResponse, error) {
 		case statusConditionsNotSatisfied:
 			return nil, ErrPresenceRequired
 		default:
-			return nil, fmt.Errorf("u2ftoken: unexpected error %d during registration", res.Status)
+			errMsg := ErrUnknownReason
+			if msg, ok := errorMessages[res.Status]; ok {
+				errMsg = msg
+			}
+			return nil, fmt.Errorf("u2ftoken: unexpected error %x during registration: %w", res.Status, errMsg)
 		}
 	}
 
@@ -199,7 +226,11 @@ func (t *Token) Authenticate(req AuthenticateRequest) (*AuthenticateResponse, er
 		if res.Status == statusConditionsNotSatisfied {
 			return nil, ErrPresenceRequired
 		}
-		return nil, fmt.Errorf("u2ftoken: unexpected error %d during authentication", res.Status)
+		errMsg := ErrUnknownReason
+		if msg, ok := errorMessages[res.Status]; ok {
+			errMsg = msg
+		}
+		return nil, fmt.Errorf("u2ftoken: unexpected error %x during authentication: %w", res.Status, errMsg)
 	}
 
 	if len(res.Data) < 6 {
@@ -235,7 +266,11 @@ func (t *Token) CheckAuthenticate(req AuthenticateRequest) error {
 		if res.Status == statusWrongData {
 			return ErrUnknownKeyHandle
 		}
-		return fmt.Errorf("u2ftoken: unexpected error %d during auth check", res.Status)
+		errMsg := ErrUnknownReason
+		if msg, ok := errorMessages[res.Status]; ok {
+			errMsg = msg
+		}
+		return fmt.Errorf("u2ftoken: unexpected error %x during auth check: %w", res.Status, errMsg)
 	}
 
 	return nil
@@ -249,10 +284,33 @@ func (t *Token) Version() (string, error) {
 	}
 
 	if res.Status != statusNoError {
-		return "", fmt.Errorf("u2ftoken: unexpected error %d during version request", res.Status)
+		errMsg := ErrUnknownReason
+		if msg, ok := errorMessages[res.Status]; ok {
+			errMsg = msg
+		}
+		return "", fmt.Errorf("u2ftoken: unexpected error %x during  version request: %w", res.Status, errMsg)
 	}
 
 	return string(res.Data), nil
+}
+
+func (t *Token) AuthenticatorSelection(ctx context.Context) error {
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			_, err := t.Register(RegisterRequest{
+				Application: make([]byte, 32),
+				Challenge:   make([]byte, 32),
+			})
+
+			if err != ErrPresenceRequired {
+				return err
+			}
+			time.Sleep(500 * time.Millisecond)
+		}
+	}
 }
 
 // A Request is a low-level request to the token.
@@ -291,4 +349,12 @@ func (t *Token) Message(req Request) (*Response, error) {
 		Data:   data[:len(data)-2],
 		Status: binary.BigEndian.Uint16(data[len(data)-2:]),
 	}, nil
+}
+
+func (t *Token) Cancel() {
+	t.d.Init()
+}
+
+func (t *Token) SetResponseTimeout(timeout time.Duration) {
+	t.d.SetResponseTimeout(timeout)
 }

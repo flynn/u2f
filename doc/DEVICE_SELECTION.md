@@ -11,7 +11,6 @@ For each devices:
             > Select devices with either CTAP1 or CTAP2 with clientPin = false (exclude CTAP2 devices with clientPin = true)
             > For all selected devices
                 > Send request to all devices, on first success response cancel all others
-                    > On all errors, return error
         Preferred:
             > Select all CTAP1 and CTAP2 devices
             > If multiple devices selected

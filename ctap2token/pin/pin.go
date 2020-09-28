@@ -2,72 +2,149 @@ package pin
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/elliptic"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
 	"os"
-	"strings"
 
 	"github.com/flynn/u2f/crypto"
 	"github.com/flynn/u2f/ctap2token"
 )
 
 type PINHandler interface {
-	Execute(clientDataHash []byte) (ctap2token.PinUVAuth, error)
+	ReadPIN() ([]byte, error)
+	SetPIN(token *ctap2token.Token) ([]byte, error)
+	Println(msg ...interface{})
 }
 
 type InteractiveHandler struct {
 	Stdin  io.Reader
 	Stdout io.Writer
-
-	token *ctap2token.Token
 }
 
 var _ PINHandler = (*InteractiveHandler)(nil)
 
 // NewInteractiveHandler returns an interactive PINHandler, which will read
 // the user PIN  from the provided reader
-func NewInteractiveHandler(t *ctap2token.Token) *InteractiveHandler {
+func NewInteractiveHandler() *InteractiveHandler {
 	return &InteractiveHandler{
-		token:  t,
 		Stdin:  os.Stdin,
 		Stdout: os.Stdout,
 	}
 }
 
-// Execute performs the operations described by the FIDO specification in order to securely
-// obtain a token from the authenticator which can be used to verify the user.
-// see https://fidoalliance.org/specs/fido-v2.0-ps-20190130/fido-client-to-authenticator-protocol-v2.0-ps-20190130.html#gettingSharedSecret
-func (h *InteractiveHandler) Execute(clientDataHash []byte) (ctap2token.PinUVAuth, error) {
-	fmt.Fprint(h.Stdout, "Enter device PIN: ")
-	reader := bufio.NewReader(h.Stdin)
-	userPIN, err := reader.ReadString('\n')
+func (h *InteractiveHandler) ReadPIN() ([]byte, error) {
+	_, err := fmt.Fprint(h.Stdout, "enter current device PIN: ")
 	if err != nil {
 		return nil, err
 	}
-	userPIN = strings.TrimSpace(userPIN)
 
-	return exchangeUserPinToPinAuth(h.token, []byte(userPIN), clientDataHash)
+	return getpasswd(h.Stdin)
 }
 
-func exchangeUserPinToPinAuth(token *ctap2token.Token, userPIN, clientDataHash []byte) ([]byte, error) {
+func (h *InteractiveHandler) SetPIN(token *ctap2token.Token) ([]byte, error) {
+	_, err := fmt.Fprint(h.Stdout, "enter new device PIN: ")
+	if err != nil {
+		return nil, err
+	}
+	userPIN, err := getpasswd(h.Stdin)
+	if err != nil {
+		return nil, err
+	}
+	if l := len(userPIN); l < 4 || l >= 64 {
+		return nil, errors.New("invalid pin, must be between 4 to 63 characters")
+	}
+	if userPIN[len(userPIN)-1] == 0 {
+		return nil, errors.New("invalid pin, must not end with a 0x00 byte")
+	}
+	_, err = fmt.Fprint(h.Stdout, "confirm new device PIN: ")
+	if err != nil {
+		return nil, err
+	}
+	confirmPIN, err := getpasswd(h.Stdin)
+	if err != nil {
+		return nil, err
+	}
+	if !bytes.Equal(userPIN, confirmPIN) {
+		return nil, errors.New("pin mismatch")
+	}
+
+	aGX, aGY, err := getTokenKeyAgreement(token)
+	if err != nil {
+		return nil, err
+	}
+	b, bGX, bGY, err := elliptic.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return nil, err
+	}
+	sharedSecret, err := computeSharedSecret(b, aGX, aGY)
+	if err != nil {
+		return nil, err
+	}
+
+	// Normalize pin size to 64 bytes, padding with zeroes
+	newPIN := make([]byte, 64)
+	copy(newPIN, userPIN)
+	newPinEnc, err := aesCBCEncrypt(sharedSecret, newPIN)
+	if err != nil {
+		return nil, err
+	}
+
+	keyAgreement := &crypto.COSEKey{
+		X:       bGX.Bytes(),
+		Y:       bGY.Bytes(),
+		KeyType: crypto.EC2,
+		Curve:   crypto.P256,
+		Alg:     crypto.ECDHES_HKDF256,
+	}
+
+	mac := hmac.New(sha256.New, sharedSecret)
+	_, err = mac.Write(newPinEnc)
+	if err != nil {
+		return nil, err
+	}
+	pinAuth := mac.Sum(nil)[:16]
+
+	_, err = token.ClientPIN(&ctap2token.ClientPINRequest{
+		SubCommand:   ctap2token.SetPIN,
+		NewPinEnc:    newPinEnc,
+		KeyAgreement: keyAgreement,
+		PinProtocol:  ctap2token.PinProtoV1,
+		PinAuth:      pinAuth,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return userPIN, nil
+}
+
+func (h *InteractiveHandler) Println(msg ...interface{}) {
+	fmt.Fprintln(h.Stdout, msg...)
+}
+
+// ExchangeUserPinToPinAuth performs the operations described by the FIDO specification in order to securely
+// obtain a token from the authenticator which can be used to verify the user.
+// see https://fidoalliance.org/specs/fido-v2.0-ps-20190130/fido-client-to-authenticator-protocol-v2.0-ps-20190130.html#gettingSharedSecret
+func ExchangeUserPinToPinAuth(token *ctap2token.Token, userPIN, clientDataHash []byte) ([]byte, error) {
 	b, bGX, bGY, err := elliptic.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return nil, err
 	}
 
-	aGX, aGY, err := GetTokenKeyAgreement(token)
+	aGX, aGY, err := getTokenKeyAgreement(token)
 	if err != nil {
 		return nil, err
 	}
 
-	sharedSecret, err := ComputeSharedSecret(b, aGX, aGY)
+	sharedSecret, err := computeSharedSecret(b, aGX, aGY)
 	if err != nil {
 		return nil, err
 	}
@@ -82,10 +159,10 @@ func exchangeUserPinToPinAuth(token *ctap2token.Token, userPIN, clientDataHash [
 		return nil, err
 	}
 
-	return ComputePINAuth(pinToken, sharedSecret, clientDataHash)
+	return computePINAuth(pinToken, sharedSecret, clientDataHash)
 }
 
-func GetTokenKeyAgreement(token *ctap2token.Token) (aGX, aGY *big.Int, err error) {
+func getTokenKeyAgreement(token *ctap2token.Token) (aGX, aGY *big.Int, err error) {
 	pinResp, err := token.ClientPIN(&ctap2token.ClientPINRequest{
 		PinProtocol: ctap2token.PinProtoV1,
 		SubCommand:  ctap2token.GetKeyAgreement,
@@ -103,7 +180,7 @@ func GetTokenKeyAgreement(token *ctap2token.Token) (aGX, aGY *big.Int, err error
 	return aGX, aGY, nil
 }
 
-func ComputeSharedSecret(b []byte, aGX, aGY *big.Int) ([]byte, error) {
+func computeSharedSecret(b []byte, aGX, aGY *big.Int) ([]byte, error) {
 	rX, _ := elliptic.P256().ScalarMult(aGX, aGY, b)
 	sha := sha256.New()
 	_, err := sha.Write(rX.Bytes())
@@ -125,10 +202,10 @@ func hashEncryptPIN(userPIN []byte, sharedSecret []byte) ([]byte, error) {
 	pinHash = pinHash[:aes.BlockSize]
 
 	// encrypt pinHash with AES-CBC using shared secret
-	return AESCBCEncrypt(sharedSecret, pinHash)
+	return aesCBCEncrypt(sharedSecret, pinHash)
 }
 
-func AESCBCEncrypt(sharedSecret, data []byte) ([]byte, error) {
+func aesCBCEncrypt(sharedSecret, data []byte) ([]byte, error) {
 	dataEnc := make([]byte, len(data))
 	c, err := aes.NewCipher(sharedSecret)
 	if err != nil {
@@ -161,7 +238,7 @@ func getPINToken(token *ctap2token.Token, encPinHash []byte, bGX, bGY *big.Int) 
 	return pinResp.PinToken, nil
 }
 
-func ComputePINAuth(pinToken, sharedSecret, data []byte) ([]byte, error) {
+func computePINAuth(pinToken, sharedSecret, data []byte) ([]byte, error) {
 	// decrypt pinToken using AES-CBC with shared secret
 	clearPinToken := make([]byte, len(data))
 	c, err := aes.NewCipher(sharedSecret)
@@ -180,4 +257,13 @@ func ComputePINAuth(pinToken, sharedSecret, data []byte) ([]byte, error) {
 	}
 	pinAuth := mac.Sum(nil)
 	return pinAuth[:16], nil
+}
+
+// TODO: improve password input (with no tty echo)
+func getpasswd(r io.Reader) ([]byte, error) {
+	pin, err := bufio.NewReader(r).ReadString('\n')
+	if err != nil {
+		return nil, err
+	}
+	return []byte(pin[:len(pin)-1]), nil
 }

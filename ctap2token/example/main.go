@@ -72,8 +72,14 @@ func main() {
 			if errors.Unwrap(err) != ctap2token.ErrPinRequired {
 				panic(err)
 			}
-			pinHandler := pin.NewInteractiveHandler(token)
-			pinAuth, err := pinHandler.Execute(clientDataHash)
+
+			pinHandler := pin.NewInteractiveHandler()
+			userPIN, err := pinHandler.ReadPIN()
+			if err != nil {
+				panic(err)
+			}
+
+			pinAuth, err := pin.ExchangeUserPinToPinAuth(token, userPIN, clientDataHash)
 			if err != nil {
 				panic(err)
 			}

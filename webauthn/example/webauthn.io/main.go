@@ -11,9 +11,7 @@ import (
 	"net/http/httputil"
 	"os"
 
-	"github.com/flynn/u2f/ctap2token"
 	"github.com/flynn/u2f/ctap2token/pin"
-	"github.com/flynn/u2f/u2fhid"
 	"github.com/flynn/u2f/webauthn"
 )
 
@@ -37,27 +35,9 @@ func main() {
 
 	host := "https://webauthn.io"
 
-	devices, err := u2fhid.Devices()
-	if err != nil {
-		panic(err)
-	}
+	t := webauthn.New(webauthn.WithCTAP2PinHandler(pin.NewInteractiveHandler()))
 
-	if len(devices) == 0 {
-		panic("no HID devices found")
-	}
-
-	d := devices[0]
-
-	dev, err := u2fhid.Open(d)
-	if err != nil {
-		panic(err)
-	}
-
-	t, err := webauthn.NewToken(dev, pin.NewInteractiveHandler(ctap2token.NewToken(dev)))
-	if err != nil {
-		panic(err)
-	}
-
+	var err error
 	switch action {
 	case "register":
 		err = register(t, username, host)
@@ -72,7 +52,7 @@ func main() {
 	}
 }
 
-func register(t webauthn.Token, username, host string) error {
+func register(t *webauthn.Webauthn, username, host string) error {
 	c := &http.Client{}
 
 	httpResp, err := c.Get(fmt.Sprintf("%s/makeCredential/%s?attType=direct&authType=&userVerification=preferred&residentKeyRequirement=false&txAuthExtension=", host, username))
@@ -150,7 +130,7 @@ func register(t webauthn.Token, username, host string) error {
 	return nil
 }
 
-func authenticate(t webauthn.Token, username, host string) error {
+func authenticate(t *webauthn.Webauthn, username, host string) error {
 	c := &http.Client{}
 	httpResp, err := c.Get(fmt.Sprintf("%s/assertion/%s?userVer=discouraged&txAuthExtension=", host, username))
 	if err != nil {

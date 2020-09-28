@@ -1,11 +1,14 @@
 package ctap2token
 
 import (
+	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/flynn/u2f/crypto"
+	"github.com/flynn/u2f/u2ftoken"
 	"github.com/fxamacker/cbor/v2"
 )
 
@@ -120,6 +123,9 @@ var ctapErrors = map[byte]error{
 type Device interface {
 	// CBOR sends a CBOR encoded message to the device and returns the response.
 	CBOR(data []byte) ([]byte, error)
+	Message(data []byte) ([]byte, error)
+	Init() error
+	SetResponseTimeout(timeout time.Duration)
 }
 
 // NewToken returns a token that will use Device to communicate with the device.
@@ -294,7 +300,7 @@ func (t *Token) ClientPIN(req *ClientPINRequest) (*ClientPINResponse, error) {
 
 	reqData, err := enc.Marshal(req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("ctap2token: failed to marshal request: %w", err)
 	}
 
 	data := make([]byte, 0, len(reqData)+1)
@@ -303,15 +309,34 @@ func (t *Token) ClientPIN(req *ClientPINRequest) (*ClientPINResponse, error) {
 
 	resp, err := t.d.CBOR(data)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("ctap2token: cbor failed: %w", err)
 	}
 
 	respData := &ClientPINResponse{}
 	if err := unmarshal(resp, respData); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("ctap2token: failed to unmarshal response: %w", err)
 	}
 
 	return respData, nil
+}
+
+func (t *Token) AuthenticatorSelection(ctx context.Context) error {
+	ctap1Token := u2ftoken.NewToken(t.d)
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			_, err := ctap1Token.Register(u2ftoken.RegisterRequest{
+				Application: make([]byte, 32),
+				Challenge:   make([]byte, 32),
+			})
+			if err != u2ftoken.ErrPresenceRequired {
+				return err
+			}
+			time.Sleep(500 * time.Millisecond)
+		}
+	}
 }
 
 // Reset restore an authenticator back to a factory default state. User presence is required.
@@ -325,6 +350,14 @@ func (t *Token) Reset() error {
 	}
 
 	return checkResponse(resp)
+}
+
+func (t *Token) Cancel() {
+	t.d.Init()
+}
+
+func (t *Token) SetResponseTimeout(timeout time.Duration) {
+	t.d.SetResponseTimeout(timeout)
 }
 
 func checkResponse(resp []byte) error {
@@ -345,6 +378,10 @@ func checkResponse(resp []byte) error {
 func unmarshal(resp []byte, out interface{}) error {
 	if err := checkResponse(resp); err != nil {
 		return err
+	}
+
+	if len(resp) == 1 {
+		return nil
 	}
 
 	if err := cbor.Unmarshal(resp[1:], out); err != nil {

@@ -1,41 +1,22 @@
 package webauthn
 
 import (
+	"context"
 	"crypto/elliptic"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/binary"
-	"encoding/json"
 	"errors"
-	"fmt"
-	"net/url"
 	"time"
 
 	"github.com/flynn/u2f/crypto"
 	"github.com/flynn/u2f/u2ftoken"
 )
 
-var DefaultCTAP1Timeout = 60
-
 type ctap1WebauthnToken struct {
 	t *u2ftoken.Token
 }
 
-func (w *ctap1WebauthnToken) Register(origin string, req *RegisterRequest) (*RegisterResponse, error) {
-	originURL, err := url.Parse(origin)
-	if err != nil {
-		return nil, fmt.Errorf("webauthn: invalid origin: %w", err)
-	}
-	if originURL.Opaque != "" {
-		return nil, fmt.Errorf("webauthn: invalid opaque origin %q", origin)
-	}
-
-	effectiveDomain := originURL.Hostname()
-	rpID := req.Rp.ID
-	if rpID == "" {
-		rpID = effectiveDomain
-	}
-
+func (w *ctap1WebauthnToken) Register(req *RegisterRequest, p *RequestParams) (*RegisterResponse, error) {
 	useES256 := false
 	for _, cp := range req.PubKeyCredParams {
 		if crypto.Alg(cp.Alg) == crypto.ES256 {
@@ -49,31 +30,20 @@ func (w *ctap1WebauthnToken) Register(origin string, req *RegisterRequest) (*Reg
 	if req.AuthenticatorSelection.RequireResidentKey {
 		return nil, errors.New("webauth: ctap1 protocol require rk to be false")
 	}
-	if req.AuthenticatorSelection.UserVerification == "required" {
+	if req.AuthenticatorSelection.UserVerification == UVRequired {
 		return nil, errors.New("webauth: ctap1 protocol does not support required user verification")
 	}
 
 	sha := sha256.New()
-	if _, err := sha.Write([]byte(rpID)); err != nil {
+	if _, err := sha.Write([]byte(req.Rp.ID)); err != nil {
 		return nil, err
 	}
 	rpIDHash := sha.Sum(nil)
 
-	clientData := collectedClientData{
-		Type:      "webauthn.create",
-		Challenge: base64.RawURLEncoding.EncodeToString(req.Challenge),
-		Origin:    fmt.Sprintf("%s://%s", originURL.Scheme, originURL.Host),
-	}
-	clientDataJSON, err := json.Marshal(clientData)
+	clientDataJSON, clientDataHash, err := p.ClientData.EncodeAndHash()
 	if err != nil {
 		return nil, err
 	}
-
-	sha.Reset()
-	if _, err := sha.Write(clientDataJSON); err != nil {
-		return nil, err
-	}
-	clientDataHash := sha.Sum(nil)
 
 	// If the excludeList is not empty, the platform must send signing request with
 	// check-only control byte to the CTAP1/U2F authenticator using each of
@@ -94,10 +64,6 @@ func (w *ctap1WebauthnToken) Register(origin string, req *RegisterRequest) (*Reg
 			errCredentialExcluded = errors.New("webauthn: excluded credential")
 			break
 		}
-	}
-
-	if req.Timeout == 0 {
-		req.Timeout = DefaultCTAP1Timeout
 	}
 
 	resp, err := w.registerWithTimeout(&u2ftoken.RegisterRequest{
@@ -160,54 +126,24 @@ func (w *ctap1WebauthnToken) Register(origin string, req *RegisterRequest) (*Reg
 	}, nil
 }
 
-func (w *ctap1WebauthnToken) Authenticate(origin string, req *AuthenticateRequest) (*AuthenticateResponse, error) {
-	originURL, err := url.Parse(origin)
-	if err != nil {
-		return nil, fmt.Errorf("webauthn: invalid origin: %w", err)
-	}
-	if originURL.Opaque != "" {
-		return nil, fmt.Errorf("webauthn: invalid opaque origin %q", origin)
-	}
-
-	effectiveDomain := originURL.Hostname()
-	rpID := req.RpID
-	if rpID == "" {
-		rpID = effectiveDomain
-	}
-
+func (w *ctap1WebauthnToken) Authenticate(req *AuthenticateRequest, p *RequestParams) (*AuthenticateResponse, error) {
 	if len(req.AllowCredentials) == 0 {
 		return nil, errors.New("webauthn: ctap1 require at least one credential")
 	}
-	if req.UserVerification == "required" {
+	if req.UserVerification == UVRequired {
 		return nil, errors.New("webauthn: ctap1 does not support user verification")
 	}
 
-	if req.Timeout == 0 {
-		req.Timeout = DefaultCTAP1Timeout
-	}
-
 	sha := sha256.New()
-	if _, err := sha.Write([]byte(rpID)); err != nil {
+	if _, err := sha.Write([]byte(req.RpID)); err != nil {
 		return nil, err
 	}
 	rpIDHash := sha.Sum(nil)
 
-	clientData := collectedClientData{
-		Challenge: base64.RawURLEncoding.EncodeToString(req.Challenge),
-		Origin:    fmt.Sprintf("%s://%s", originURL.Scheme, originURL.Host),
-		Type:      "webauthn.get",
-	}
-
-	clientDataJSON, err := json.Marshal(clientData)
+	clientDataJSON, clientDataHash, err := p.ClientData.EncodeAndHash()
 	if err != nil {
 		return nil, err
 	}
-
-	sha.Reset()
-	if _, err := sha.Write(clientDataJSON); err != nil {
-		return nil, err
-	}
-	clientDataHash := sha.Sum(nil)
 
 	authReq := &u2ftoken.AuthenticateRequest{
 		Challenge:   clientDataHash,
@@ -242,6 +178,26 @@ func (w *ctap1WebauthnToken) Authenticate(origin string, req *AuthenticateReques
 			ClientDataJSON:    clientDataJSON,
 		},
 	}, nil
+}
+
+func (w *ctap1WebauthnToken) AuthenticatorSelection(ctx context.Context) error {
+	return w.t.AuthenticatorSelection(ctx)
+}
+
+func (w *ctap1WebauthnToken) RequireUV() bool {
+	return false
+}
+
+func (w *ctap1WebauthnToken) SupportRK() bool {
+	return false
+}
+
+func (w *ctap1WebauthnToken) Cancel() {
+	w.t.Cancel()
+}
+
+func (w *ctap1WebauthnToken) SetResponseTimeout(timeout time.Duration) {
+	w.t.SetResponseTimeout(timeout)
 }
 
 func (w *ctap1WebauthnToken) registerWithTimeout(req *u2ftoken.RegisterRequest, timeout time.Duration) (*u2ftoken.RegisterResponse, error) {

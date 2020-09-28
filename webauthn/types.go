@@ -1,16 +1,33 @@
 package webauthn
 
 import (
+	"context"
+	"crypto/sha256"
+	"encoding/json"
+	"time"
+
 	ctap2 "github.com/flynn/u2f/ctap2token"
 	"github.com/flynn/u2f/u2ftoken"
 	"github.com/fxamacker/cbor/v2"
 )
 
-type Token interface {
+type Authenticator interface {
 	// Register is the equivalent to navigator.credential.create()
-	Register(origin string, req *RegisterRequest) (*RegisterResponse, error)
+	Register(req *RegisterRequest, p *RequestParams) (*RegisterResponse, error)
 	// Authenticate is the equivalent to navigator.credential.get()
-	Authenticate(origin string, req *AuthenticateRequest) (*AuthenticateResponse, error)
+	Authenticate(req *AuthenticateRequest, p *RequestParams) (*AuthenticateResponse, error)
+
+	AuthenticatorSelection(ctx context.Context) error
+
+	SetResponseTimeout(timeout time.Duration)
+	RequireUV() bool
+	SupportRK() bool
+	Cancel()
+}
+
+type RequestParams struct {
+	UserPIN    []byte
+	ClientData CollectedClientData
 }
 
 type Device interface {
@@ -41,16 +58,26 @@ type RegisterRequest struct {
 		Type string `json:"type"`
 		Alg  int    `json:"alg"`
 	} `json:"pubKeyCredParams"`
-	ExcludeCredentials     []ExcludedCredential `json:"excludeCredentials"`
-	AuthenticatorSelection struct {
-		AuthenticatorAttachment string `json:"authenticatorAttachment"`
-		RequireResidentKey      bool   `json:"requireResidentKey"`
-		UserVerification        string `json:"userVerification"`
-	} `json:"authenticatorSelection"`
-	Timeout     int                    `json:"timeout"`
-	Extensions  map[string]interface{} `json:"extensions"`
-	Attestation string                 `json:"attestation"`
+	ExcludeCredentials     []ExcludedCredential   `json:"excludeCredentials"`
+	AuthenticatorSelection AuthenticatorSelection `json:"authenticatorSelection"`
+	Timeout                int                    `json:"timeout"`
+	Extensions             map[string]interface{} `json:"extensions"`
+	Attestation            string                 `json:"attestation"`
 }
+
+type AuthenticatorSelection struct {
+	AuthenticatorAttachment string           `json:"authenticatorAttachment"`
+	RequireResidentKey      bool             `json:"requireResidentKey"`
+	UserVerification        UserVerification `json:"userVerification"`
+}
+
+type UserVerification string
+
+const (
+	UVDiscouraged UserVerification = "discouraged"
+	UVPreferred   UserVerification = "preferred"
+	UVRequired    UserVerification = "required"
+)
 
 type RegisterResponse struct {
 	ID       []byte
@@ -95,7 +122,7 @@ type AuthenticateRequest struct {
 	Timeout          int                    `json:"timeout"`
 	RpID             string                 `json:"rpId"`
 	AllowCredentials []AllowedCredential    `json:"allowCredentials"`
-	UserVerification string                 `json:"userVerification"`
+	UserVerification UserVerification       `json:"userVerification"`
 	Extensions       map[string]interface{} `json:"extensions"`
 }
 type AuthenticateResponse struct {
@@ -110,9 +137,23 @@ type AssertionResponse struct {
 	UserHandle        []byte
 }
 
-type collectedClientData struct {
+type CollectedClientData struct {
 	Type      string `json:"type"`
 	Challenge string `json:"challenge"`
 	Origin    string `json:"origin"`
 	// TODO tokenBinding ?
+}
+
+func (c CollectedClientData) EncodeAndHash() (dataJSON []byte, dataHash []byte, err error) {
+	dataJSON, err = json.Marshal(c)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	sha := sha256.New()
+	if _, err := sha.Write(dataJSON); err != nil {
+		return nil, nil, err
+	}
+	dataHash = sha.Sum(nil)
+	return dataJSON, dataHash, nil
 }

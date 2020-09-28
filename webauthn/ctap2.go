@@ -2,42 +2,32 @@ package webauthn
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/base64"
-	"encoding/json"
+	"context"
 	"errors"
 	"fmt"
-	"net/url"
+	"time"
 
 	"github.com/flynn/u2f/crypto"
 	ctap2 "github.com/flynn/u2f/ctap2token"
 	"github.com/flynn/u2f/ctap2token/pin"
 )
 
-type ctap2TWebauthnToken struct {
-	t          *ctap2.Token
-	pinHandler pin.PINHandler
+var supportedCTAP2CredentialTypes = map[string]ctap2.CredentialType{
+	string(ctap2.PublicKey): ctap2.PublicKey,
+}
+var supportedCTAP2Transports = map[string]ctap2.AuthenticatorTransport{
+	string(ctap2.USB): ctap2.USB,
 }
 
-func (w *ctap2TWebauthnToken) Register(origin string, req *RegisterRequest) (*RegisterResponse, error) {
-	originURL, err := url.Parse(origin)
-	if err != nil {
-		return nil, fmt.Errorf("webauthn: invalid origin: %w", err)
-	}
-	if originURL.Opaque != "" {
-		return nil, fmt.Errorf("webauthn: invalid opaque origin %q", origin)
-	}
+type ctap2WebauthnToken struct {
+	t       *ctap2.Token
+	options map[string]bool
+}
 
-	effectiveDomain := originURL.Hostname() // TODO validate with https://url.spec.whatwg.org/#valid-domain
-
-	rpID := req.Rp.ID
-	if rpID == "" {
-		rpID = effectiveDomain
-	}
-
+func (w *ctap2WebauthnToken) Register(req *RegisterRequest, p *RequestParams) (*RegisterResponse, error) {
 	credTypesAndPubKeyAlgs := make([]ctap2.CredentialParam, 0, len(req.PubKeyCredParams))
 	for _, cp := range req.PubKeyCredParams {
-		t, ok := supportedCredentialTypes[cp.Type]
+		t, ok := supportedCTAP2CredentialTypes[cp.Type]
 		if !ok {
 			continue
 		}
@@ -55,32 +45,21 @@ func (w *ctap2TWebauthnToken) Register(origin string, req *RegisterRequest) (*Re
 	// TODO add support for extensions (bullet point 11 and 12 from https://www.w3.org/TR/webauthn/#createCredential)
 	clientExtensions := make(map[string]interface{})
 
-	clientData := collectedClientData{
-		Type:      "webauthn.create",
-		Challenge: base64.RawURLEncoding.EncodeToString(req.Challenge),
-		Origin:    fmt.Sprintf("%s://%s", originURL.Scheme, originURL.Host),
-	}
-	clientDataJSON, err := json.Marshal(clientData)
+	clientDataJSON, clientDataHash, err := p.ClientData.EncodeAndHash()
 	if err != nil {
 		return nil, err
 	}
 
-	sha := sha256.New()
-	if _, err := sha.Write(clientDataJSON); err != nil {
-		return nil, err
-	}
-	clientDataHash := sha.Sum(nil)
-
 	excludeList := make([]ctap2.CredentialDescriptor, 0, len(req.ExcludeCredentials))
 	for _, c := range req.ExcludeCredentials {
-		t, ok := supportedCredentialTypes[c.Type]
+		t, ok := supportedCTAP2CredentialTypes[c.Type]
 		if !ok {
 			return nil, fmt.Errorf("webauthn: unsupported excluded credential type %q", c.Type)
 		}
 
 		transports := make([]ctap2.AuthenticatorTransport, 0, len(c.Transports))
 		for _, transport := range c.Transports {
-			ctapTransport, ok := supportedTransports[transport]
+			ctapTransport, ok := supportedCTAP2Transports[transport]
 			if !ok {
 				return nil, fmt.Errorf("webauthn: unsupported transport type %q", transport)
 			}
@@ -99,15 +78,20 @@ func (w *ctap2TWebauthnToken) Register(origin string, req *RegisterRequest) (*Re
 		options["rk"] = true
 	}
 
-	pinUVAuth, pinProtocol, err := w.userVerification(req.AuthenticatorSelection.UserVerification, clientDataHash)
-	if err != nil {
-		return nil, err
+	var pinProtocol ctap2.PinUVAuthProtocolVersion
+	var pinUVAuth []byte
+	if len(p.UserPIN) > 0 {
+		var err error
+		pinUVAuth, err = pin.ExchangeUserPinToPinAuth(w.t, p.UserPIN, clientDataHash)
+		if err != nil {
+			return nil, err
+		}
+		pinProtocol = ctap2.PinProtoV1
 	}
-
 	resp, err := w.t.MakeCredential(&ctap2.MakeCredentialRequest{
 		ClientDataHash: clientDataHash,
 		RP: ctap2.CredentialRpEntity{
-			ID:   rpID,
+			ID:   req.Rp.ID,
 			Name: req.Rp.Name,
 			Icon: req.Rp.Icon,
 		},
@@ -174,52 +158,29 @@ func (w *ctap2TWebauthnToken) Register(origin string, req *RegisterRequest) (*Re
 	}, nil
 }
 
-func (w *ctap2TWebauthnToken) Authenticate(origin string, req *AuthenticateRequest) (*AuthenticateResponse, error) {
-	originURL, err := url.Parse(origin)
-	if err != nil {
-		return nil, fmt.Errorf("webauthn: invalid origin: %w", err)
-	}
-	if originURL.Opaque != "" {
-		return nil, fmt.Errorf("webauthn: invalid opaque origin %q", origin)
-	}
-
-	effectiveDomain := originURL.Hostname() // TODO validate with https://url.spec.whatwg.org/#valid-domain
-
-	// TODO if options.rpId is not a "registrable domain suffix" of and is not equal to effectiveDomain, return error
-	rpID := req.RpID
-
-	if rpID == "" {
-		rpID = effectiveDomain
-	}
-
+func (w *ctap2WebauthnToken) Authenticate(req *AuthenticateRequest, p *RequestParams) (*AuthenticateResponse, error) {
 	// TODO add support for extensions (bullet point 8 from https://www.w3.org/TR/2020/WD-webauthn-2-20200730/#sctn-discover-from-external-source)
 	clientExtensions := make(map[string]interface{})
 
-	clientData := collectedClientData{
-		Challenge: base64.RawURLEncoding.EncodeToString(req.Challenge),
-		Origin:    fmt.Sprintf("%s://%s", originURL.Scheme, originURL.Host),
-		Type:      "webauthn.get",
-	}
-
-	clientDataJSON, err := json.Marshal(clientData)
+	clientDataJSON, clientDataHash, err := p.ClientData.EncodeAndHash()
 	if err != nil {
 		return nil, err
 	}
 
-	sha := sha256.New()
-	if _, err := sha.Write(clientDataJSON); err != nil {
-		return nil, err
-	}
-	clientDataHash := sha.Sum(nil)
-
-	pinUVAuth, pinProtocol, err := w.userVerification(req.UserVerification, clientDataHash)
-	if err != nil {
-		return nil, err
+	var pinProtocol ctap2.PinUVAuthProtocolVersion
+	var pinUVAuth []byte
+	if len(p.UserPIN) > 0 {
+		var err error
+		pinUVAuth, err = pin.ExchangeUserPinToPinAuth(w.t, p.UserPIN, clientDataHash)
+		if err != nil {
+			return nil, err
+		}
+		pinProtocol = ctap2.PinProtoV1
 	}
 
 	allowList := make([]*ctap2.CredentialDescriptor, 0, len(req.AllowCredentials))
 	for _, c := range req.AllowCredentials {
-		t, ok := supportedCredentialTypes[c.Type]
+		t, ok := supportedCTAP2CredentialTypes[c.Type]
 		if !ok {
 			return nil, fmt.Errorf("webauthn: unsupported excluded credential type %q", c.Type)
 		}
@@ -231,7 +192,7 @@ func (w *ctap2TWebauthnToken) Authenticate(origin string, req *AuthenticateReque
 	}
 
 	resp, err := w.t.GetAssertion(&ctap2.GetAssertionRequest{
-		RPID:              rpID,
+		RPID:              req.RpID,
 		ClientDataHash:    clientDataHash,
 		PinUVAuth:         pinUVAuth,
 		PinUVAuthProtocol: pinProtocol,
@@ -262,45 +223,22 @@ func (w *ctap2TWebauthnToken) Authenticate(origin string, req *AuthenticateReque
 	}, nil
 }
 
-func (w *ctap2TWebauthnToken) userVerification(uv string, clientDataHash []byte) ([]byte, ctap2.PinUVAuthProtocolVersion, error) {
-	infos, err := w.t.GetInfo()
-	if err != nil {
-		return nil, 0, err
-	}
+func (w *ctap2WebauthnToken) AuthenticatorSelection(ctx context.Context) error {
+	return w.t.AuthenticatorSelection(ctx)
+}
 
-	var pinUVAuth []byte
-	var pinProtocol ctap2.PinUVAuthProtocolVersion
+func (w *ctap2WebauthnToken) Cancel() {
+	w.t.Cancel()
+}
 
-	if uv == "" {
-		uv = "preferred"
-	}
+func (w *ctap2WebauthnToken) RequireUV() bool {
+	return w.options["clientPin"]
+}
 
-	switch uv {
-	case "discouraged":
-		// Do nothing
-	case "required":
-		if pin, ok := infos.Options["clientPin"]; !ok || !pin {
-			return nil, 0, errors.New("webauthn: authenticator does not support user verification")
-		}
+func (w *ctap2WebauthnToken) SupportRK() bool {
+	return w.options["rk"]
+}
 
-		pinProtocol = ctap2.PinProtoV1
-		pinUVAuth, err = w.pinHandler.Execute(clientDataHash)
-		if err != nil {
-			return nil, 0, err
-		}
-	case "preferred":
-		// Most authenticators seems to set clientPin option to true when the PIN is set
-		// TODO: validate this is a standard way to do that
-		if pin, ok := infos.Options["clientPin"]; ok && pin {
-			pinProtocol = ctap2.PinProtoV1
-			pinUVAuth, err = w.pinHandler.Execute(clientDataHash)
-			if err != nil {
-				return nil, 0, err
-			}
-		}
-	default:
-		return nil, 0, fmt.Errorf("unsupported user verification option %q", uv)
-	}
-
-	return pinUVAuth, pinProtocol, nil
+func (w *ctap2WebauthnToken) SetResponseTimeout(timeout time.Duration) {
+	w.t.SetResponseTimeout(timeout)
 }

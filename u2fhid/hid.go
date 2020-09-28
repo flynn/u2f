@@ -33,7 +33,7 @@ const (
 	maxMessageLen      = 7609
 	minInitResponseLen = 17
 
-	responseTimeout = 10 * time.Second
+	defaultResponseTimeout = 60 * time.Second
 
 	fidoUsagePage = 0xF1D0
 	u2fUsage      = 1
@@ -75,12 +75,13 @@ func Open(info *hid.DeviceInfo) (*Device, error) {
 	}
 
 	d := &Device{
-		info:   info,
-		device: hidDev,
-		readCh: hidDev.ReadCh(),
+		info:            info,
+		device:          hidDev,
+		readCh:          hidDev.ReadCh(),
+		responseTimeout: defaultResponseTimeout,
 	}
 
-	if err := d.init(); err != nil {
+	if err := d.Init(); err != nil {
 		return nil, err
 	}
 
@@ -107,9 +108,10 @@ type Device struct {
 	device  hid.Device
 	channel uint32
 
-	mtx    sync.Mutex
-	readCh <-chan []byte
-	buf    []byte
+	mtx             sync.Mutex
+	readCh          <-chan []byte
+	buf             []byte
+	responseTimeout time.Duration
 }
 
 func (d *Device) sendCommand(channel uint32, cmd byte, data []byte) error {
@@ -128,7 +130,6 @@ func (d *Device) sendCommand(channel uint32, cmd byte, data []byte) error {
 
 	n := copy(d.buf[8:], data)
 	data = data[n:]
-
 	if err := d.device.Write(d.buf); err != nil {
 		return err
 	}
@@ -153,7 +154,7 @@ func (d *Device) sendCommand(channel uint32, cmd byte, data []byte) error {
 }
 
 func (d *Device) readResponse(channel uint32, cmd byte) ([]byte, error) {
-	timeout := time.After(responseTimeout)
+	timeout := time.After(d.responseTimeout)
 
 	haveFirst := false
 	var buf []byte
@@ -216,7 +217,7 @@ func (d *Device) readResponse(channel uint32, cmd byte) ([]byte, error) {
 	}
 }
 
-func (d *Device) init() error {
+func (d *Device) Init() error {
 	d.buf = make([]byte, d.info.OutputReportLength+1)
 
 	nonce := make([]byte, 8)
@@ -280,6 +281,9 @@ func (d *Device) Wink() error {
 // Message sends an encapsulated U2F protocol message to the device and returns
 // the response.
 func (d *Device) Message(data []byte) ([]byte, error) {
+	// Size of header + data + 2 zero bytes for maximum return size.
+	// see https://en.wikipedia.org/wiki/Smart_card_application_protocol_data_unit
+	data = append(data, []byte{0, 0}...)
 	return d.Command(cmdMsg, data)
 }
 
@@ -289,7 +293,15 @@ func (d *Device) CBOR(data []byte) ([]byte, error) {
 	return d.Command(cmdCbor, data)
 }
 
+func (d *Device) Cancel() {
+	d.Command(cmdCancel, nil)
+}
+
 // Close closes the device and frees associated resources.
 func (d *Device) Close() {
 	d.device.Close()
+}
+
+func (d *Device) SetResponseTimeout(timeout time.Duration) {
+	d.responseTimeout = timeout
 }
