@@ -1,7 +1,6 @@
 package pin
 
 import (
-	"bufio"
 	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
@@ -11,12 +10,12 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
-	"io"
 	"math/big"
 	"os"
 
 	"github.com/flynn/u2f/crypto"
 	"github.com/flynn/u2f/ctap2token"
+	"golang.org/x/crypto/ssh/terminal"
 )
 
 const (
@@ -31,8 +30,8 @@ type PINHandler interface {
 }
 
 type InteractiveHandler struct {
-	Stdin  io.Reader
-	Stdout io.Writer
+	Stdin  *os.File
+	Stdout *os.File
 }
 
 var _ PINHandler = (*InteractiveHandler)(nil)
@@ -266,11 +265,9 @@ func computePINAuth(pinToken, sharedSecret, data []byte) ([]byte, error) {
 	return pinAuth[:16], nil
 }
 
-// TODO: improve password input (with no tty echo)
-func getpasswd(r io.Reader) ([]byte, error) {
-	pin, err := bufio.NewReader(r).ReadString('\n')
-	if err != nil {
-		return nil, err
-	}
-	return []byte(pin[:len(pin)-1]), nil
+func getpasswd(r *os.File) ([]byte, error) {
+	pin, err := terminal.ReadPassword(int(r.Fd()))
+	// since terminal disable tty echo, we need a newline to keep the display organized
+	fmt.Println()
+	return pin, err
 }
