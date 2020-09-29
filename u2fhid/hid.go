@@ -27,7 +27,9 @@ const (
 
 	broadcastChannel = 0xffffffff
 
-	capabilityWink = 1
+	capabilityWink = 0x1
+	capabilityCBOR = 0x4
+	capabilityNMSG = 0x8
 
 	minMessageLen      = 7
 	maxMessageLen      = 7609
@@ -100,9 +102,14 @@ type Device struct {
 	RawCapabilities uint8
 
 	// CapabilityWink is true if the device advertised support for the wink
-	// command during initilization. Even if this flag is true, the device may
+	// command during initialization. Even if this flag is true, the device may
 	// not actually do anything if the command is called.
 	CapabilityWink bool
+	// CapabilityCBOR is true when the device support CBOR encoded messages
+	// used by the CTAP2 protocol
+	CapabilityCBOR bool
+	// CababilityNMSG is true when the device support CTAP1 messages
+	CababilityNMSG bool
 
 	info    *hid.DeviceInfo
 	device  hid.Device
@@ -249,6 +256,8 @@ func (d *Device) Init() error {
 		d.BuildDeviceVersion = res[15]
 		d.RawCapabilities = res[16]
 		d.CapabilityWink = d.RawCapabilities&capabilityWink != 0
+		d.CapabilityCBOR = d.RawCapabilities&capabilityCBOR != 0
+		d.CababilityNMSG = d.RawCapabilities&capabilityNMSG == 0
 		break
 	}
 
@@ -294,7 +303,7 @@ func (d *Device) CBOR(data []byte) ([]byte, error) {
 }
 
 func (d *Device) Cancel() {
-	d.Command(cmdCancel, nil)
+	d.sendCommand(d.channel, cmdCancel, nil)
 }
 
 // Close closes the device and frees associated resources.

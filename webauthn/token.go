@@ -251,14 +251,17 @@ func (a *Webauthn) selectAuthenticators(opts AuthenticatorSelection) ([]Authenti
 				}
 
 				var current Authenticator
-				var isCTAP2 bool
-				t := ctap2.NewToken(dev)
-				if info, err := t.GetInfo(); err == nil {
+				if dev.CapabilityCBOR {
+					t := ctap2.NewToken(dev)
+					info, err := t.GetInfo()
+					if err != nil {
+						return nil, nil, err
+					}
+
 					current = &ctap2WebauthnToken{
 						t:       t,
 						options: info.Options,
 					}
-					isCTAP2 = true
 				} else {
 					current = &ctap1WebauthnToken{
 						t: u2ftoken.NewToken(dev),
@@ -272,7 +275,7 @@ func (a *Webauthn) selectAuthenticators(opts AuthenticatorSelection) ([]Authenti
 				if opts.UserVerification == UVDiscouraged && current.RequireUV() {
 					continue
 				}
-				if opts.UserVerification == UVRequired && !isCTAP2 {
+				if opts.UserVerification == UVRequired && !dev.CapabilityCBOR {
 					continue
 				}
 
