@@ -16,7 +16,7 @@ type ctap1WebauthnToken struct {
 	t *u2ftoken.Token
 }
 
-func (w *ctap1WebauthnToken) Register(req *RegisterRequest, p *RequestParams) (*RegisterResponse, error) {
+func (w *ctap1WebauthnToken) Register(ctx context.Context, req *RegisterRequest, p *RequestParams) (*RegisterResponse, error) {
 	useES256 := false
 	for _, cp := range req.PubKeyCredParams {
 		if crypto.Alg(cp.Alg) == crypto.ES256 {
@@ -66,10 +66,10 @@ func (w *ctap1WebauthnToken) Register(req *RegisterRequest, p *RequestParams) (*
 		}
 	}
 
-	resp, err := w.registerWithTimeout(&u2ftoken.RegisterRequest{
+	resp, err := w.waitRegister(ctx, &u2ftoken.RegisterRequest{
 		Application: rpIDHash,
 		Challenge:   clientDataHash,
-	}, time.Duration(req.Timeout))
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -126,7 +126,7 @@ func (w *ctap1WebauthnToken) Register(req *RegisterRequest, p *RequestParams) (*
 	}, nil
 }
 
-func (w *ctap1WebauthnToken) Authenticate(req *AuthenticateRequest, p *RequestParams) (*AuthenticateResponse, error) {
+func (w *ctap1WebauthnToken) Authenticate(ctx context.Context, req *AuthenticateRequest, p *RequestParams) (*AuthenticateResponse, error) {
 	if len(req.AllowCredentials) == 0 {
 		return nil, errors.New("webauthn: ctap1 require at least one credential")
 	}
@@ -160,7 +160,7 @@ func (w *ctap1WebauthnToken) Authenticate(req *AuthenticateRequest, p *RequestPa
 		}
 	}
 
-	authResp, err := w.authenticateWithTimeout(authReq, time.Duration(req.Timeout))
+	authResp, err := w.waitAuthenticate(ctx, authReq)
 	if err != nil {
 		return nil, err
 	}
@@ -192,19 +192,15 @@ func (w *ctap1WebauthnToken) SupportRK() bool {
 	return false
 }
 
-func (w *ctap1WebauthnToken) Cancel() {
-	w.t.Cancel()
-}
-
 func (w *ctap1WebauthnToken) SetResponseTimeout(timeout time.Duration) {
 	w.t.SetResponseTimeout(timeout)
 }
 
-func (w *ctap1WebauthnToken) registerWithTimeout(req *u2ftoken.RegisterRequest, timeout time.Duration) (*u2ftoken.RegisterResponse, error) {
+func (w *ctap1WebauthnToken) waitRegister(ctx context.Context, req *u2ftoken.RegisterRequest) (*u2ftoken.RegisterResponse, error) {
 	for {
 		select {
-		case <-time.After(timeout * time.Second):
-			return nil, u2ftoken.ErrPresenceRequired
+		case <-ctx.Done():
+			return nil, ctx.Err()
 		default:
 			resp, err := w.t.Register(*req)
 			if err != nil {
@@ -219,11 +215,11 @@ func (w *ctap1WebauthnToken) registerWithTimeout(req *u2ftoken.RegisterRequest, 
 	}
 }
 
-func (w *ctap1WebauthnToken) authenticateWithTimeout(req *u2ftoken.AuthenticateRequest, timeout time.Duration) (*u2ftoken.AuthenticateResponse, error) {
+func (w *ctap1WebauthnToken) waitAuthenticate(ctx context.Context, req *u2ftoken.AuthenticateRequest) (*u2ftoken.AuthenticateResponse, error) {
 	for {
 		select {
-		case <-time.After(timeout * time.Second):
-			return nil, u2ftoken.ErrPresenceRequired
+		case <-ctx.Done():
+			return nil, ctx.Err()
 		default:
 			resp, err := w.t.Authenticate(*req)
 			if err != nil {

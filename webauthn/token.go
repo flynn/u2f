@@ -67,7 +67,7 @@ func New(opts ...WebauthnOption) *Webauthn {
 	return a
 }
 
-func (a *Webauthn) Register(origin string, req *RegisterRequest) (*RegisterResponse, error) {
+func (a *Webauthn) Register(ctx context.Context, origin string, req *RegisterRequest) (*RegisterResponse, error) {
 	originURL, err := url.Parse(origin)
 	if err != nil {
 		return nil, fmt.Errorf("webauthn: invalid origin: %w", err)
@@ -86,9 +86,8 @@ func (a *Webauthn) Register(origin string, req *RegisterRequest) (*RegisterRespo
 	if req.Rp.ID == "" {
 		req.Rp.ID = originURL.Hostname()
 	}
-	// TODO check RP ID is a valid domain (https://www.w3.org/TR/webauthn/#CreateCred-DetermineRpId)
 
-	authenticators, userPIN, err := a.selectAuthenticators(req.AuthenticatorSelection)
+	authenticators, userPIN, err := a.selectAuthenticators(ctx, req.AuthenticatorSelection)
 	if err != nil {
 		return nil, err
 	}
@@ -101,11 +100,15 @@ func (a *Webauthn) Register(origin string, req *RegisterRequest) (*RegisterRespo
 
 	respChan := make(chan *authenticatorResponse)
 
+	timeout := time.Duration(req.Timeout) * time.Second
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+
 	// Send the request to all selected authenticators
 	for _, authenticator := range authenticators {
 		go func(a Authenticator) {
-			a.SetResponseTimeout(time.Duration(req.Timeout) * time.Second)
-			resp, err := a.Register(req, &RequestParams{
+			// make sure the HID cnx stay open at least as long as the request needs it.
+			a.SetResponseTimeout(timeout)
+			resp, err := a.Register(ctx, req, &RequestParams{
 				ClientData: CollectedClientData{
 					Type:      "webauthn.create",
 					Challenge: base64.RawURLEncoding.EncodeToString(req.Challenge),
@@ -124,26 +127,15 @@ func (a *Webauthn) Register(origin string, req *RegisterRequest) (*RegisterRespo
 	select {
 	case authResp := <-respChan:
 		// cancel any other pending authenticators
-		for _, a := range authenticators {
-			if a == authResp.authenticator {
-				continue
-			}
-			a.Cancel()
-		}
-
-		if authResp.err != nil {
-			return nil, authResp.err
-		}
-		return authResp.resp, nil
+		cancel()
+		return authResp.resp, authResp.err
 	case <-time.After(time.Duration(req.Timeout) * time.Second):
-		for _, a := range authenticators {
-			a.Cancel()
-		}
+		cancel()
 		return nil, errors.New("webauthn: timeout waiting for authenticator response")
 	}
 }
 
-func (a *Webauthn) Authenticate(origin string, req *AuthenticateRequest) (*AuthenticateResponse, error) {
+func (a *Webauthn) Authenticate(ctx context.Context, origin string, req *AuthenticateRequest) (*AuthenticateResponse, error) {
 	originURL, err := url.Parse(origin)
 	if err != nil {
 		return nil, fmt.Errorf("webauthn: invalid origin: %w", err)
@@ -162,9 +154,8 @@ func (a *Webauthn) Authenticate(origin string, req *AuthenticateRequest) (*Authe
 	if req.RpID == "" {
 		req.RpID = originURL.Hostname()
 	}
-	// TODO check RP ID is a valid domain (https://www.w3.org/TR/webauthn/#CreateCred-DetermineRpId)
 
-	authenticators, userPIN, err := a.selectAuthenticators(AuthenticatorSelection{
+	authenticators, userPIN, err := a.selectAuthenticators(ctx, AuthenticatorSelection{
 		UserVerification: req.UserVerification,
 	})
 	if err != nil {
@@ -179,11 +170,15 @@ func (a *Webauthn) Authenticate(origin string, req *AuthenticateRequest) (*Authe
 
 	respChan := make(chan *authenticatorResponse)
 
+	timeout := time.Duration(req.Timeout) * time.Second
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+
 	// Send the request to all selected authenticators
 	for _, authenticator := range authenticators {
 		go func(a Authenticator) {
-			a.SetResponseTimeout(time.Duration(req.Timeout) * time.Second)
-			resp, err := a.Authenticate(req, &RequestParams{
+			// make sure the HID cnx stay open at least as long as the request needs it.
+			a.SetResponseTimeout(timeout)
+			resp, err := a.Authenticate(ctx, req, &RequestParams{
 				ClientData: CollectedClientData{
 					Type:      "webauthn.get",
 					Challenge: base64.RawURLEncoding.EncodeToString(req.Challenge),
@@ -202,21 +197,10 @@ func (a *Webauthn) Authenticate(origin string, req *AuthenticateRequest) (*Authe
 	select {
 	case authResp := <-respChan:
 		// cancel any other pending authenticators
-		for _, a := range authenticators {
-			if a == authResp.authenticator {
-				continue
-			}
-			a.Cancel()
-		}
-
-		if authResp.err != nil {
-			return nil, authResp.err
-		}
-		return authResp.resp, nil
+		cancel()
+		return authResp.resp, authResp.err
 	case <-time.After(time.Duration(req.Timeout) * time.Second):
-		for _, a := range authenticators {
-			a.Cancel()
-		}
+		cancel()
 		return nil, errors.New("webauthn: timeout waiting for authenticator response")
 	}
 }
@@ -226,7 +210,7 @@ func (a *Webauthn) Authenticate(origin string, req *AuthenticateRequest) (*Authe
 // requirements.
 // If user verification is required, the user will be prompted to enter the device PIN, or to set it. The PIN will
 // be returned in order to be exchanged later for a pinAuth code (see pin.ExchangeUserPinToPinAuth).
-func (a *Webauthn) selectAuthenticators(opts AuthenticatorSelection) ([]Authenticator, []byte, error) {
+func (a *Webauthn) selectAuthenticators(ctx context.Context, opts AuthenticatorSelection) ([]Authenticator, []byte, error) {
 	var selected []Authenticator
 	var userPIN []byte
 
@@ -288,12 +272,23 @@ func (a *Webauthn) selectAuthenticators(opts AuthenticatorSelection) ([]Authenti
 	// This is done by sending fake ctap1 register requests to all devices, with a test-user-presence flag.
 	// The first device to reply a non error is assumed selected by the user.
 	if opts.UserVerification != UVDiscouraged {
-		selectedAuth := selected[0]
+		// if we require UV, have multiple devies, and at least one
+		// support CTAP2, we must request the user to select the device first.
+		// when having multiple CTAP1 devices only, we just skip selection, the user presence test will
+		// select the device.
+		ctap2DevicePresent := false
+		for _, s := range selected {
+			if _, isCTAP2 := s.(*ctap2WebauthnToken); isCTAP2 {
+				ctap2DevicePresent = true
+				break
+			}
+		}
 
-		if len(selected) > 1 {
+		selectedAuth := selected[0]
+		if len(selected) > 1 && ctap2DevicePresent {
 			a.pinHandler.Println("multiple security keys found. Please select one by touching it...")
 			respChan := make(chan Authenticator)
-			ctx, cancel := context.WithTimeout(context.Background(), a.deviceSelectionTimeout)
+			ctx, cancel := context.WithTimeout(ctx, a.deviceSelectionTimeout)
 			defer cancel()
 			for _, s := range selected {
 				go func(auth Authenticator) {

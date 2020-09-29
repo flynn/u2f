@@ -62,7 +62,6 @@ var ErrUnknownKeyHandle = errors.New("u2ftoken: unknown key handle")
 type Device interface {
 	// Message sends a message to the device and returns the response.
 	Message(data []byte) ([]byte, error)
-	Init() error
 	SetResponseTimeout(timeout time.Duration)
 }
 
@@ -308,7 +307,7 @@ func (t *Token) AuthenticatorSelection(ctx context.Context) error {
 			if err != ErrPresenceRequired {
 				return err
 			}
-			time.Sleep(500 * time.Millisecond)
+			time.Sleep(200 * time.Millisecond)
 		}
 	}
 }
@@ -349,10 +348,6 @@ func (t *Token) Message(req Request) (*Response, error) {
 		Data:   data[:len(data)-2],
 		Status: binary.BigEndian.Uint16(data[len(data)-2:]),
 	}, nil
-}
-
-func (t *Token) Cancel() {
-	t.d.Init()
 }
 
 func (t *Token) SetResponseTimeout(timeout time.Duration) {

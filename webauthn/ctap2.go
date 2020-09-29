@@ -24,7 +24,7 @@ type ctap2WebauthnToken struct {
 	options map[string]bool
 }
 
-func (w *ctap2WebauthnToken) Register(req *RegisterRequest, p *RequestParams) (*RegisterResponse, error) {
+func (w *ctap2WebauthnToken) Register(ctx context.Context, req *RegisterRequest, p *RequestParams) (*RegisterResponse, error) {
 	credTypesAndPubKeyAlgs := make([]ctap2.CredentialParam, 0, len(req.PubKeyCredParams))
 	for _, cp := range req.PubKeyCredParams {
 		t, ok := supportedCTAP2CredentialTypes[cp.Type]
@@ -158,7 +158,7 @@ func (w *ctap2WebauthnToken) Register(req *RegisterRequest, p *RequestParams) (*
 	}, nil
 }
 
-func (w *ctap2WebauthnToken) Authenticate(req *AuthenticateRequest, p *RequestParams) (*AuthenticateResponse, error) {
+func (w *ctap2WebauthnToken) Authenticate(ctx context.Context, req *AuthenticateRequest, p *RequestParams) (*AuthenticateResponse, error) {
 	// TODO add support for extensions (bullet point 8 from https://www.w3.org/TR/2020/WD-webauthn-2-20200730/#sctn-discover-from-external-source)
 	clientExtensions := make(map[string]interface{})
 
@@ -225,10 +225,6 @@ func (w *ctap2WebauthnToken) Authenticate(req *AuthenticateRequest, p *RequestPa
 
 func (w *ctap2WebauthnToken) AuthenticatorSelection(ctx context.Context) error {
 	return w.t.AuthenticatorSelection(ctx)
-}
-
-func (w *ctap2WebauthnToken) Cancel() {
-	w.t.Cancel()
 }
 
 func (w *ctap2WebauthnToken) RequireUV() bool {

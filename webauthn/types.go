@@ -13,16 +13,15 @@ import (
 
 type Authenticator interface {
 	// Register is the equivalent to navigator.credential.create()
-	Register(req *RegisterRequest, p *RequestParams) (*RegisterResponse, error)
+	Register(ctx context.Context, req *RegisterRequest, p *RequestParams) (*RegisterResponse, error)
 	// Authenticate is the equivalent to navigator.credential.get()
-	Authenticate(req *AuthenticateRequest, p *RequestParams) (*AuthenticateResponse, error)
+	Authenticate(ctx context.Context, req *AuthenticateRequest, p *RequestParams) (*AuthenticateResponse, error)
 
 	AuthenticatorSelection(ctx context.Context) error
 
 	SetResponseTimeout(timeout time.Duration)
 	RequireUV() bool
 	SupportRK() bool
-	Cancel()
 }
 
 type RequestParams struct {

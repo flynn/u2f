@@ -125,7 +125,6 @@ type Device interface {
 	CBOR(data []byte) ([]byte, error)
 	// Message sends a CTAP1 message to the device and returns the response.
 	Message(data []byte) ([]byte, error)
-	Init() error
 	// SetResponseTimeout allow to control the maximum time to wait for the device response
 	SetResponseTimeout(timeout time.Duration)
 }
@@ -348,7 +347,7 @@ func (t *Token) AuthenticatorSelection(ctx context.Context) error {
 			if err != u2ftoken.ErrPresenceRequired {
 				return err
 			}
-			time.Sleep(500 * time.Millisecond)
+			time.Sleep(200 * time.Millisecond)
 		}
 	}
 }
@@ -364,10 +363,6 @@ func (t *Token) Reset() error {
 	}
 
 	return checkResponse(resp)
-}
-
-func (t *Token) Cancel() {
-	t.d.Init()
 }
 
 func (t *Token) SetResponseTimeout(timeout time.Duration) {

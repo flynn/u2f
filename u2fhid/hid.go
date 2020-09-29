@@ -14,16 +14,16 @@ import (
 )
 
 const (
-	cmdPing      = 0x80 | 0x01
-	cmdMsg       = 0x80 | 0x03
-	cmdLock      = 0x80 | 0x04
+	cmdPing = 0x80 | 0x01
+	cmdMsg  = 0x80 | 0x03
+	//cmdLock      = 0x80 | 0x04
 	cmdInit      = 0x80 | 0x06
 	cmdWink      = 0x80 | 0x08
 	cmdCbor      = 0x80 | 0x10
 	cmdCancel    = 0x80 | 0x11
 	cmdKeepAlive = 0x80 | 0x3b
-	cmdSync      = 0x80 | 0x3c
-	cmdError     = 0x80 | 0x3f
+	//cmdSync      = 0x80 | 0x3c
+	cmdError = 0x80 | 0x3f
 
 	broadcastChannel = 0xffffffff
 
@@ -303,7 +303,7 @@ func (d *Device) CBOR(data []byte) ([]byte, error) {
 }
 
 func (d *Device) Cancel() {
-	d.sendCommand(d.channel, cmdCancel, nil)
+	_, _ = d.Command(cmdCancel, nil)
 }
 
 // Close closes the device and frees associated resources.

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -79,7 +80,7 @@ func register(t *webauthn.Webauthn, username, host string) error {
 	}
 
 	fmt.Printf("Webauthn registration request for %q on %q. Confirm presence on authenticator when it will blink...\n", username, host)
-	webauthnResp, err := t.Register(host, webauthnReq.PublicKey)
+	webauthnResp, err := t.Register(context.Background(), host, webauthnReq.PublicKey)
 	if err != nil {
 		return err
 	}
@@ -157,7 +158,7 @@ func authenticate(t *webauthn.Webauthn, username, host string) error {
 	}
 
 	fmt.Printf("Webauthn authentication request for %q on %q. Confirm presence on authenticator when it will blink...\n", username, host)
-	webauthnResp, err := t.Authenticate(host, authReq.PublicKey)
+	webauthnResp, err := t.Authenticate(context.Background(), host, authReq.PublicKey)
 	if err != nil {
 		return err
 	}
