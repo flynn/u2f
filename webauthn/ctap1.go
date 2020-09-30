@@ -196,6 +196,10 @@ func (w *ctap1WebauthnToken) SetResponseTimeout(timeout time.Duration) {
 	w.t.SetResponseTimeout(timeout)
 }
 
+func (w *ctap1WebauthnToken) Close() {
+	w.t.Close()
+}
+
 func (w *ctap1WebauthnToken) waitRegister(ctx context.Context, req *u2ftoken.RegisterRequest) (*u2ftoken.RegisterResponse, error) {
 	for {
 		select {

@@ -2,13 +2,13 @@ package ctap2token
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"time"
 
 	"github.com/flynn/u2f/crypto"
-	"github.com/flynn/u2f/u2ftoken"
 	"github.com/fxamacker/cbor/v2"
 )
 
@@ -127,6 +127,8 @@ type Device interface {
 	Message(data []byte) ([]byte, error)
 	// SetResponseTimeout allow to control the maximum time to wait for the device response
 	SetResponseTimeout(timeout time.Duration)
+	Cancel()
+	Close()
 }
 
 // NewToken returns a token that will use Device to communicate with the device.
@@ -150,7 +152,9 @@ type MakeCredentialRequest struct {
 	Options          AuthenticatorOptions    `cbor:"7,keyasint,omitempty"`
 	// PinUVAuth is the first 16 bytes of HMAC-SHA-256 of clientDataHash using
 	// pinToken which platform got from the authenticator
-	PinUVAuth []byte `cbor:"8,keyasint,omitempty"`
+	// we need a pointer here to distinguish nil pinUVAuth from empty.
+	// When nil, it must be omitted from the CBOR encoded request, but included when empty,
+	PinUVAuth *[]byte `cbor:"8,keyasint,omitempty"`
 	// PinUVAuthProtocol is the PIN protocol version chosen by the client
 	PinUVAuthProtocol PinUVAuthProtocolVersion `cbor:"9,keyasint,omitempty"`
 }
@@ -334,21 +338,28 @@ func (t *Token) ClientPIN(req *ClientPINRequest) (*ClientPINResponse, error) {
 }
 
 func (t *Token) AuthenticatorSelection(ctx context.Context) error {
-	ctap1Token := u2ftoken.NewToken(t.d)
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-			_, err := ctap1Token.Register(u2ftoken.RegisterRequest{
-				Application: make([]byte, 32),
-				Challenge:   make([]byte, 32),
-			})
-			if err != u2ftoken.ErrPresenceRequired {
-				return err
-			}
-			time.Sleep(200 * time.Millisecond)
-		}
+	dummyHash := make([]byte, sha256.Size)
+	_, err := t.MakeCredential(&MakeCredentialRequest{
+		ClientDataHash: dummyHash,
+		User: CredentialUserEntity{
+			ID:   []byte{0x1},
+			Name: "dummy",
+		},
+		RP: CredentialRpEntity{
+			ID: ".dummy",
+		},
+		PubKeyCredParams: []CredentialParam{
+			PublicKeyES256,
+		},
+		PinUVAuth:         &[]byte{},
+		PinUVAuthProtocol: PinProtoV1,
+	})
+
+	switch errors.Unwrap(err) {
+	case nil, ErrPinAuthInvalid, ErrPinNotSet:
+		return nil
+	default:
+		return err
 	}
 }
 
@@ -367,6 +378,14 @@ func (t *Token) Reset() error {
 
 func (t *Token) SetResponseTimeout(timeout time.Duration) {
 	t.d.SetResponseTimeout(timeout)
+}
+
+func (t *Token) Cancel() {
+	t.d.Cancel()
+}
+
+func (t *Token) Close() {
+	t.d.Close()
 }
 
 func checkResponse(resp []byte) error {

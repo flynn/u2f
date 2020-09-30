@@ -22,6 +22,7 @@ type Authenticator interface {
 	SetResponseTimeout(timeout time.Duration)
 	RequireUV() bool
 	SupportRK() bool
+	Close()
 }
 
 type RequestParams struct {

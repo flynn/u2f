@@ -42,14 +42,15 @@ const (
 )
 
 var errorCodes = map[uint8]string{
-	1: "invalid command",
-	2: "invalid parameter",
-	3: "invalid message length",
-	4: "invalid message sequencing",
-	5: "message timed out",
-	6: "channel busy",
-	7: "command requires channel lock",
-	8: "sync command failed",
+	0x01: "invalid command",
+	0x02: "invalid parameter",
+	0x03: "invalid message length",
+	0x04: "invalid message sequencing",
+	0x05: "message timed out",
+	0x06: "channel busy",
+	0x07: "command requires channel lock",
+	0x08: "sync command failed",
+	0x2d: "pending keep alive was cancelled",
 }
 
 // Devices lists available HID devices that advertise the U2F HID protocol.
@@ -303,7 +304,8 @@ func (d *Device) CBOR(data []byte) ([]byte, error) {
 }
 
 func (d *Device) Cancel() {
-	_, _ = d.Command(cmdCancel, nil)
+	// As the cancel command is sent during an ongoing transaction, transaction semantics do not apply.
+	_ = d.sendCommand(d.channel, cmdCancel, nil)
 }
 
 // Close closes the device and frees associated resources.

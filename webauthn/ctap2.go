@@ -79,13 +79,14 @@ func (w *ctap2WebauthnToken) Register(ctx context.Context, req *RegisterRequest,
 	}
 
 	var pinProtocol ctap2.PinUVAuthProtocolVersion
-	var pinUVAuth []byte
+	var pinUVAuth *[]byte
 	if len(p.UserPIN) > 0 {
 		var err error
-		pinUVAuth, err = pin.ExchangeUserPinToPinAuth(w.t, p.UserPIN, clientDataHash)
+		uvAuth, err := pin.ExchangeUserPinToPinAuth(w.t, p.UserPIN, clientDataHash)
 		if err != nil {
 			return nil, err
 		}
+		pinUVAuth = &uvAuth
 		pinProtocol = ctap2.PinProtoV1
 	}
 	resp, err := w.t.MakeCredential(&ctap2.MakeCredentialRequest{
@@ -237,4 +238,8 @@ func (w *ctap2WebauthnToken) SupportRK() bool {
 
 func (w *ctap2WebauthnToken) SetResponseTimeout(timeout time.Duration) {
 	w.t.SetResponseTimeout(timeout)
+}
+
+func (w *ctap2WebauthnToken) Close() {
+	w.t.Close()
 }

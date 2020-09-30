@@ -84,7 +84,7 @@ func main() {
 			if err != nil {
 				panic(err)
 			}
-			req.PinUVAuth = pinAuth
+			req.PinUVAuth = &pinAuth
 			req.PinUVAuthProtocol = ctap2token.PinProtoV1
 
 			resp, err = token.MakeCredential(req)

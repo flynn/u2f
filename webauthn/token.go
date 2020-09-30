@@ -126,11 +126,13 @@ func (a *Webauthn) Register(ctx context.Context, origin string, req *RegisterReq
 
 	select {
 	case authResp := <-respChan:
-		// cancel any other pending authenticators
+		// cancel any other pending CTAP1 authenticators
 		cancel()
+		closeAll(authenticators)
 		return authResp.resp, authResp.err
 	case <-time.After(time.Duration(req.Timeout) * time.Second):
 		cancel()
+		closeAll(authenticators)
 		return nil, errors.New("webauthn: timeout waiting for authenticator response")
 	}
 }
@@ -196,12 +198,20 @@ func (a *Webauthn) Authenticate(ctx context.Context, origin string, req *Authent
 
 	select {
 	case authResp := <-respChan:
-		// cancel any other pending authenticators
+		// cancel any other pending CTAP1 authenticators
 		cancel()
+		closeAll(authenticators)
 		return authResp.resp, authResp.err
 	case <-time.After(time.Duration(req.Timeout) * time.Second):
+		closeAll(authenticators)
 		cancel()
 		return nil, errors.New("webauthn: timeout waiting for authenticator response")
+	}
+}
+
+func closeAll(auths []Authenticator) {
+	for _, a := range auths {
+		a.Close()
 	}
 }
 
@@ -254,12 +264,15 @@ func (a *Webauthn) selectAuthenticators(ctx context.Context, opts AuthenticatorS
 
 				// Skip devices not fullfilling request requirements
 				if opts.RequireResidentKey && !current.SupportRK() {
+					dev.Close()
 					continue
 				}
 				if opts.UserVerification == UVDiscouraged && current.RequireUV() {
+					dev.Close()
 					continue
 				}
 				if opts.UserVerification == UVRequired && !dev.CapabilityCBOR {
+					dev.Close()
 					continue
 				}
 
@@ -301,17 +314,28 @@ func (a *Webauthn) selectAuthenticators(ctx context.Context, opts AuthenticatorS
 
 			select {
 			case selectedAuth = <-respChan:
+				// cancel CTAP1 selection routines
+				cancel()
+				for _, s := range selected {
+					if s == selectedAuth {
+						continue
+					}
+					// send a cancel command to CTAP2 devices (they cannot be canceled via go context)
+					if a, ok := s.(*ctap2WebauthnToken); ok {
+						a.t.Cancel()
+					}
+					// close all  devices not selected
+					s.Close()
+				}
 				selected = []Authenticator{selectedAuth}
 				a.pinHandler.Println("device selected!")
-				cancel() // cancel other selection routines
 			case <-ctx.Done():
 				return nil, nil, ctx.Err()
 			}
 		}
 
 		// Collect PIN or guide user to set a PIN on CTAP2 authenticators
-		ctap2Auth, isCTAP2 := selectedAuth.(*ctap2WebauthnToken)
-		if isCTAP2 {
+		if ctap2Auth, isCTAP2 := selectedAuth.(*ctap2WebauthnToken); isCTAP2 {
 			var err error
 			if !selectedAuth.RequireUV() {
 				userPIN, err = a.pinHandler.SetPIN(ctap2Auth.t)

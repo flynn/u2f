@@ -63,6 +63,7 @@ type Device interface {
 	// Message sends a message to the device and returns the response.
 	Message(data []byte) ([]byte, error)
 	SetResponseTimeout(timeout time.Duration)
+	Close()
 }
 
 // NewToken returns a token that will use Device to communicate with the device.
@@ -352,4 +353,8 @@ func (t *Token) Message(req Request) (*Response, error) {
 
 func (t *Token) SetResponseTimeout(timeout time.Duration) {
 	t.d.SetResponseTimeout(timeout)
+}
+
+func (t *Token) Close() {
+	t.d.Close()
 }
