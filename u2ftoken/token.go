@@ -3,9 +3,13 @@
 package u2ftoken
 
 import (
+	"crypto/x509/pkix"
+	"encoding/asn1"
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math/big"
+	"time"
 )
 
 const (
@@ -97,6 +101,121 @@ func (t *Token) Register(req RegisterRequest) ([]byte, error) {
 	}
 
 	return res.Data, nil
+}
+
+// RegisterParsed is like Register, but returns the parsed version of the
+// registration response.
+func (t *Token) RegisterParsed(req RegisterRequest) (*RegisterResponse, error) {
+	raw, err := t.Register(req)
+	if err != nil {
+		return nil, err
+	}
+
+	return parseRegisterResponse(raw)
+}
+
+// RegisterResponse is a message returned by the U2F token on successful
+// registration.
+type RegisterResponse struct {
+	// UserPublicKey is the public key of the generated key pair for this
+	// registration. This is the (uncompressed) x,y-representation of a curve
+	// point on the P-256 NIST elliptic curve.
+	UserPublicKey []byte
+	// KeyHandle identifies the generated key pair to the U2F token.
+	KeyHandle []byte
+	// AttestationCertificate in X.509 DER format (you can parse it with
+	// x509.ParseCertificate). This certificate is signed by a
+	// manufacturer-controlled CA and can be used to verify the authenticity of
+	// the U2F token.
+	AttestationCertificate []byte
+	// Signature is a ECDSA signature (on P-256) over parts of the registration
+	// request and response. See
+	// https://fidoalliance.org/specs/fido-u2f-v1.2-ps-20170411/fido-u2f-raw-message-formats-v1.2-ps-20170411.html#registration-response-message-success
+	// for the signed contents.
+	//
+	// Signature can be verified using the public key in
+	// AttestationCertificate.
+	Signature []byte
+}
+
+func parseRegisterResponse(raw []byte) (*RegisterResponse, error) {
+	// Response format is documented at
+	// https://fidoalliance.org/specs/fido-u2f-v1.2-ps-20170411/fido-u2f-raw-message-formats-v1.2-ps-20170411.html#registration-response-message-success
+	var res RegisterResponse
+
+	// 1 reserved byte + 65 byte public key + 1 byte key handle length.
+	if len(raw) < 67 {
+		return nil, fmt.Errorf("u2ftoken: incomplete or corrupt registration response, missing public key")
+	}
+	// Discard the reserved byte.
+	_, raw = nextNBytes(raw, 1)
+
+	// Read the public key.
+	res.UserPublicKey, raw = nextNBytes(raw, 65)
+
+	// Read the key handle (variable length).
+	khLen, raw := nextNBytes(raw, 1)
+	if len(raw) < int(khLen[0]) {
+		return nil, fmt.Errorf("u2ftoken: incomplete or corrupt registration response, missing key handle")
+	}
+	res.KeyHandle, raw = nextNBytes(raw, int(khLen[0]))
+
+	// Read the attestation certificate.
+	//
+	// We need to do the ASN.1 parsing manually, because x509.ParseCertificate
+	// fails on trailing data.
+	var cert x509Certificate
+	raw, err := asn1.Unmarshal(raw, &cert)
+	if err != nil {
+		return nil, fmt.Errorf("u2ftoken: incomplete or corrupt registration response, missing attestation certificate: %w", err)
+	}
+	res.AttestationCertificate = []byte(cert.Raw)
+
+	// Rest of the response is the signature, which is 71-73 bytes
+	if len(raw) < 71 || len(raw) > 73 {
+		return nil, fmt.Errorf("u2ftoken: incomplete or corrupt registration response, missing signature")
+	}
+	res.Signature = raw
+
+	return &res, nil
+}
+
+func nextNBytes(data []byte, n int) (bytes, rest []byte) {
+	return data[:n], data[n:]
+}
+
+// ASN.1 structure of X.509 certificates, copied from
+// https://golang.org/src/crypto/x509/x509.go
+
+type x509Certificate struct {
+	Raw                asn1.RawContent
+	TBSCertificate     x509TBSCertificate
+	SignatureAlgorithm pkix.AlgorithmIdentifier
+	SignatureValue     asn1.BitString
+}
+
+type x509TBSCertificate struct {
+	Raw                asn1.RawContent
+	Version            int `asn1:"optional,explicit,default:0,tag:0"`
+	SerialNumber       *big.Int
+	SignatureAlgorithm pkix.AlgorithmIdentifier
+	Issuer             asn1.RawValue
+	Validity           x509Validity
+	Subject            asn1.RawValue
+	PublicKey          x509PublicKeyInfo
+	UniqueId           asn1.BitString   `asn1:"optional,tag:1"`
+	SubjectUniqueId    asn1.BitString   `asn1:"optional,tag:2"`
+	Extensions         []pkix.Extension `asn1:"optional,explicit,tag:3"`
+}
+
+type x509Validity struct {
+	NotBefore, NotAfter time.Time
+}
+
+type x509PublicKeyInfo struct {
+	Raw       asn1.RawContent
+	Algorithm pkix.AlgorithmIdentifier
+	PublicKey asn1.BitString
 }
 
 // An AuthenticateRequires is a message used for authenticating to a relying party
