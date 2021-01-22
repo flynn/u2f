@@ -131,9 +131,17 @@ func (t *Token) Register(req RegisterRequest) (*RegisterResponse, error) {
 		}
 	}
 
+	if len(res.Data) < 67 {
+		return nil, fmt.Errorf("u2ftoken: incomplete or corrupt registration response, missing public key")
+	}
+
 	userPubKey := res.Data[1:66]
 
 	khLen := int(res.Data[66])
+
+	if len(res.Data) < 67+khLen {
+		return nil, fmt.Errorf("u2ftoken: incomplete or corrupt registration response, missing key handle")
+	}
 	keyHandle := res.Data[67 : 67+khLen]
 
 	remaining := res.Data[67+khLen:]

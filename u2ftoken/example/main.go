@@ -85,10 +85,6 @@ func main() {
 		log.Fatal(err)
 	}
 
-	if _, err := io.ReadFull(rand.Reader, challenge); err != nil {
-		log.Fatal(err)
-	}
-
 	log.Println("authenticating, provide user presence")
 	for {
 		res, err := t.Authenticate(req)

@@ -82,7 +82,7 @@ func (w *ctap2WebauthnToken) Register(ctx context.Context, req *RegisterRequest,
 	var pinUVAuth *[]byte
 	if len(p.UserPIN) > 0 {
 		var err error
-		uvAuth, err := pin.ExchangeUserPinToPinAuth(w.t, p.UserPIN, clientDataHash)
+		uvAuth, err := pin.ExchangeUserPin(w.t, p.UserPIN, clientDataHash)
 		if err != nil {
 			return nil, err
 		}
@@ -172,7 +172,7 @@ func (w *ctap2WebauthnToken) Authenticate(ctx context.Context, req *Authenticate
 	var pinUVAuth []byte
 	if len(p.UserPIN) > 0 {
 		var err error
-		pinUVAuth, err = pin.ExchangeUserPinToPinAuth(w.t, p.UserPIN, clientDataHash)
+		pinUVAuth, err = pin.ExchangeUserPin(w.t, p.UserPIN, clientDataHash)
 		if err != nil {
 			return nil, err
 		}

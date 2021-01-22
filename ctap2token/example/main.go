@@ -30,12 +30,12 @@ func main() {
 
 		token := ctap2token.NewToken(dev)
 
-		infos, err := token.GetInfo()
+		info, err := token.GetInfo()
 		if err != nil {
-			fmt.Printf("failed to retrieve token info (%v), is the token supporting CTAP2 ?\n", err)
+			fmt.Printf("failed to retrieve token info (%v), does the token support CTAP2 ?\n", err)
 			continue
 		}
-		fmt.Printf("Token infos:\n%#v\n", infos)
+		fmt.Printf("Token info:\n%#v\n", info)
 
 		clientDataHash := make([]byte, 32)
 		if _, err := rand.Read(clientDataHash); err != nil {
@@ -80,7 +80,7 @@ func main() {
 				panic(err)
 			}
 
-			pinAuth, err := pin.ExchangeUserPinToPinAuth(token, userPIN, clientDataHash)
+			pinAuth, err := pin.ExchangeUserPin(token, userPIN, clientDataHash)
 			if err != nil {
 				panic(err)
 			}
@@ -92,7 +92,7 @@ func main() {
 				panic(err)
 			}
 		}
-		fmt.Println("Success creating credential")
+		fmt.Println("Successfully created credential")
 
 		// Verify signature with the X509 certificate from the attestation statement
 		x509certs, ok := resp.AttSmt["x5c"]

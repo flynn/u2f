@@ -141,7 +141,6 @@ type CollectedClientData struct {
 	Type      string `json:"type"`
 	Challenge string `json:"challenge"`
 	Origin    string `json:"origin"`
-	// TODO tokenBinding ? (https://www.w3.org/TR/webauthn/#dom-collectedclientdata-tokenbinding)
 }
 
 func (c CollectedClientData) EncodeAndHash() (dataJSON []byte, dataHash []byte, err error) {

@@ -1,10 +1,11 @@
 package crypto
 
-import "github.com/fxamacker/cbor/v2"
+import (
+	"github.com/fxamacker/cbor/v2"
+)
 
 // COSEKey, as defined per https://tools.ietf.org/html/rfc8152#section-7.1
-// Only support Elliptic Curve Public keys for now.
-// TODO: find a way to support all key types defined in the RFC
+// Only supports Elliptic Curve Public keys.
 type COSEKey struct {
 	Y     []byte    `cbor:"-3,keyasint,omitempty"`
 	X     []byte    `cbor:"-2,keyasint,omitempty"`
@@ -30,9 +31,9 @@ func (k *COSEKey) CBOREncode() ([]byte, error) {
 type KeyType int
 
 const (
-	// OKP means Octet Key Pair
+	// OKP is an Octet Key Pair
 	OKP KeyType = 0x01
-	// EC2 means Elliptic Curve Keys
+	// EC2 is an Elliptic Curve Key
 	EC2 KeyType = 0x02
 )
 
@@ -63,7 +64,7 @@ const (
 	MACVerify
 )
 
-// Alg must be the value of one of the algorithms registered on
+// Alg must be the value of one of the algorithms registered in
 // https://www.iana.org/assignments/cose/cose.xhtml#algorithms.
 type Alg int
 

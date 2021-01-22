@@ -37,7 +37,7 @@ type InteractiveHandler struct {
 var _ PINHandler = (*InteractiveHandler)(nil)
 
 // NewInteractiveHandler returns an interactive PINHandler, which will read
-// the user PIN  from the provided reader
+// the user PIN from the provided reader.
 func NewInteractiveHandler() *InteractiveHandler {
 	return &InteractiveHandler{
 		Stdin:  os.Stdin,
@@ -63,14 +63,10 @@ func (h *InteractiveHandler) SetPIN(token *ctap2token.Token) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := validateUserPIN(userPIN); err != nil {
+		return nil, err
+	}
 
-	// checks from https://fidoalliance.org/specs/fido2/fido-client-to-authenticator-protocol-v2.1-rd-20191217.html#client-pin-uv-support
-	if l := len(userPIN); l < PinLengthMin || l > PinLengthMax {
-		return nil, errors.New("invalid pin, must be between 4 to 63 bytes")
-	}
-	if userPIN[len(userPIN)-1] == 0 {
-		return nil, errors.New("invalid pin, must not end with a NUL byte")
-	}
 	_, err = fmt.Fprint(h.Stdout, "confirm new device PIN: ")
 	if err != nil {
 		return nil, err
@@ -83,17 +79,46 @@ func (h *InteractiveHandler) SetPIN(token *ctap2token.Token) ([]byte, error) {
 		return nil, errors.New("pin confirmation mismatch")
 	}
 
+	if err := setTokenPIN(token, userPIN); err != nil {
+		return nil, err
+	}
+
+	return userPIN, nil
+}
+
+func (h *InteractiveHandler) Println(msg ...interface{}) {
+	fmt.Fprintln(h.Stdout, msg...)
+}
+
+// validateUserPIN performs checks described from
+// https://fidoalliance.org/specs/fido2/fido-client-to-authenticator-protocol-v2.1-rd-20191217.html#client-pin-uv-support
+// and returns an error if the user PIN is invalid.
+func validateUserPIN(userPIN []byte) error {
+	if l := len(userPIN); l < PinLengthMin || l > PinLengthMax {
+		return errors.New("invalid pin, must be between 4 to 63 bytes")
+	}
+	if userPIN[len(userPIN)-1] == 0 {
+		return errors.New("invalid pin, must not end with a NUL byte")
+	}
+	return nil
+}
+
+func setTokenPIN(token *ctap2token.Token, userPIN []byte) error {
+	if err := validateUserPIN(userPIN); err != nil {
+		return err
+	}
+
 	aGX, aGY, err := getTokenKeyAgreement(token)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	b, bGX, bGY, err := elliptic.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	sharedSecret, err := computeSharedSecret(b, aGX, aGY)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// Normalize pin size to 64 bytes, padding with zeroes
@@ -101,7 +126,7 @@ func (h *InteractiveHandler) SetPIN(token *ctap2token.Token) ([]byte, error) {
 	copy(newPIN, userPIN)
 	newPinEnc, err := aesCBCEncrypt(sharedSecret, newPIN)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	keyAgreement := &crypto.COSEKey{
@@ -115,7 +140,7 @@ func (h *InteractiveHandler) SetPIN(token *ctap2token.Token) ([]byte, error) {
 	mac := hmac.New(sha256.New, sharedSecret)
 	_, err = mac.Write(newPinEnc)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	pinAuth := mac.Sum(nil)[:16]
 
@@ -127,19 +152,16 @@ func (h *InteractiveHandler) SetPIN(token *ctap2token.Token) ([]byte, error) {
 		PinAuth:      pinAuth,
 	})
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return userPIN, nil
+
+	return nil
 }
 
-func (h *InteractiveHandler) Println(msg ...interface{}) {
-	fmt.Fprintln(h.Stdout, msg...)
-}
-
-// ExchangeUserPinToPinAuth performs the operations described by the FIDO specification in order to securely
+// ExchangeUserPin performs the operations described by the FIDO specification in order to securely
 // obtain a token from the authenticator which can be used to verify the user.
 // see https://fidoalliance.org/specs/fido-v2.0-ps-20190130/fido-client-to-authenticator-protocol-v2.0-ps-20190130.html#gettingSharedSecret
-func ExchangeUserPinToPinAuth(token *ctap2token.Token, userPIN, clientDataHash []byte) ([]byte, error) {
+func ExchangeUserPin(token *ctap2token.Token, userPIN, clientDataHash []byte) ([]byte, error) {
 	b, bGX, bGY, err := elliptic.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return nil, err
@@ -267,7 +289,7 @@ func computePINAuth(pinToken, sharedSecret, data []byte) ([]byte, error) {
 
 func getpasswd(r *os.File) ([]byte, error) {
 	pin, err := terminal.ReadPassword(int(r.Fd()))
-	// since terminal disable tty echo, we need a newline to keep the display organized
+	// since terminal disables tty echo, we need a newline to keep the display organized
 	fmt.Println()
 	return pin, err
 }

@@ -125,7 +125,7 @@ type Device interface {
 	CBOR(data []byte) ([]byte, error)
 	// Message sends a CTAP1 message to the device and returns the response.
 	Message(data []byte) ([]byte, error)
-	// SetResponseTimeout allow to control the maximum time to wait for the device response
+	// SetResponseTimeout sets the maximum time to wait for a response from the device.
 	SetResponseTimeout(timeout time.Duration)
 	Cancel()
 	Close()
