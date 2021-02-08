@@ -1,7 +1,7 @@
 # Device selection
 
-When multiple authenticators are available, the webauthn specification isn't really clear how to proceed (see for example https://www.w3.org/TR/webauthn/#createCredential, starting at bullet point 19). Some browsers don't support CTAP2 and rely exclusively on CTAP1/U2F protocol, thus making it impossible to use webauthn with user verification in required mode, or they downgrade the preferred mode to behave like the discouraged one, like Firefox 80.0.1 under Linux. 
-However, Windows browsers seem to offer a better support for CTAP2, and the following flow have been observed:
+When multiple authenticators are available, the WebAuthn specification isn't really clear how to proceed (see for example https://www.w3.org/TR/webauthn/#createCredential, starting at bullet point 19). Some browsers don't support CTAP2 and rely exclusively on the CTAP1/U2F protocol, thus making it impossible to use WebAuthn with user verification in required mode, or they downgrade the preferred mode to behave like the discouraged one, like Firefox 80.0.1 under Linux. 
+However, Windows browsers seem to offer a better support for CTAP2, and the following flow has been observed:
 
 ```
 List all available devices

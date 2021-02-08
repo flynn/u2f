@@ -106,7 +106,7 @@ func (a *Webauthn) Register(ctx context.Context, origin string, req *RegisterReq
 	// Send the request to all selected authenticators
 	for _, authenticator := range authenticators {
 		go func(a Authenticator) {
-			// make sure the HID cnx stay open at least as long as the request needs it.
+			// make sure the HID connection stays open at least as long as the request needs it.
 			a.SetResponseTimeout(timeout)
 			resp, err := a.Register(ctx, req, &RequestParams{
 				ClientData: CollectedClientData{
@@ -178,7 +178,7 @@ func (a *Webauthn) Authenticate(ctx context.Context, origin string, req *Authent
 	// Send the request to all selected authenticators
 	for _, authenticator := range authenticators {
 		go func(a Authenticator) {
-			// make sure the HID cnx stay open at least as long as the request needs it.
+			// make sure the HID connection stays open at least as long as the request needs it.
 			a.SetResponseTimeout(timeout)
 			resp, err := a.Authenticate(ctx, req, &RequestParams{
 				ClientData: CollectedClientData{
@@ -215,7 +215,7 @@ func closeAll(auths []Authenticator) {
 	}
 }
 
-// selectAuthenticators guide the user into selecting the authenticator to communicate with.
+// selectAuthenticators guides the user into selecting the authenticator to communicate with.
 // One or multiple devices can be returned depending on their supported protocols and the AuthenticatorSelection
 // requirements.
 // If user verification is required, the user will be prompted to enter the device PIN, or to set it. The PIN will
@@ -282,8 +282,8 @@ func (a *Webauthn) selectAuthenticators(ctx context.Context, opts AuthenticatorS
 	}
 
 	// When multiple devices are present and UV is needed, we must guide the user to select a single device.
-	// This is done by sending fake ctap1 register requests to all devices, with a test-user-presence flag.
-	// The first device to reply a non error is assumed selected by the user.
+	// This is done by sending fake CTAP1 register requests to all devices, with a test-user-presence flag.
+	// The first device to reply with a non-error is assumed selected by the user.
 	if opts.UserVerification != UVDiscouraged {
 		// if we require UV, have multiple devies, and at least one
 		// support CTAP2, we must request the user to select the device first.
@@ -299,7 +299,7 @@ func (a *Webauthn) selectAuthenticators(ctx context.Context, opts AuthenticatorS
 
 		selectedAuth := selected[0]
 		if len(selected) > 1 && ctap2DevicePresent {
-			a.pinHandler.Println("multiple security keys found. Please select one by touching it...")
+			a.pinHandler.Println("Multiple security keys found. Please select one by touching it...")
 			respChan := make(chan Authenticator)
 			ctx, cancel := context.WithTimeout(ctx, a.deviceSelectionTimeout)
 			defer cancel()
@@ -324,7 +324,7 @@ func (a *Webauthn) selectAuthenticators(ctx context.Context, opts AuthenticatorS
 					if a, ok := s.(*ctap2WebauthnToken); ok {
 						a.t.Cancel()
 					}
-					// close all  devices not selected
+					// close all devices not selected
 					s.Close()
 				}
 				selected = []Authenticator{selectedAuth}
@@ -349,7 +349,7 @@ func (a *Webauthn) selectAuthenticators(ctx context.Context, opts AuthenticatorS
 				}
 			}
 		}
-		a.pinHandler.Println("confirm presence on authenticator when it will blink...")
+		a.pinHandler.Println("Confirm presence by touching the authenticator when it blinks...")
 
 	}
 

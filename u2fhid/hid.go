@@ -106,10 +106,10 @@ type Device struct {
 	// command during initialization. Even if this flag is true, the device may
 	// not actually do anything if the command is called.
 	CapabilityWink bool
-	// CapabilityCBOR is true when the device support CBOR encoded messages
+	// CapabilityCBOR is true when the device supports CBOR encoded messages
 	// used by the CTAP2 protocol
 	CapabilityCBOR bool
-	// CababilityNMSG is true when the device support CTAP1 messages
+	// CababilityNMSG is true when the device supports CTAP1 messages
 	CababilityNMSG bool
 
 	info    *hid.DeviceInfo

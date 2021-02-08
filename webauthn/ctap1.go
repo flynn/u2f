@@ -45,7 +45,7 @@ func (w *ctap1WebauthnToken) Register(ctx context.Context, req *RegisterRequest,
 		return nil, err
 	}
 
-	// If the excludeList is not empty, the platform must send signing request with
+	// If the excludeList is not empty, the platform must send the signing request with
 	// check-only control byte to the CTAP1/U2F authenticator using each of
 	// the credential ids (key handles) in the excludeList.
 	// If any of them does not result in an error, that means that this is a known device.

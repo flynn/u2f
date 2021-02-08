@@ -363,8 +363,8 @@ func (t *Token) AuthenticatorSelection(ctx context.Context) error {
 	}
 }
 
-// Reset restore an authenticator back to a factory default state. User presence is required.
-// In case of authenticators with no display, Reset request MUST have come to the authenticator within 10 seconds
+// Reset restores an authenticator back to a factory default state. User presence is required.
+// In case of authenticators with no display, the Reset request MUST have come to the authenticator within 10 seconds
 // of powering up of the authenticator
 // see: https://fidoalliance.org/specs/fido2/fido-client-to-authenticator-protocol-v2.1-rd-20191217.html#authenticatorReset
 func (t *Token) Reset() error {
@@ -490,10 +490,10 @@ func (a AuthData) Parse() (*ParsedAuthData, error) {
 	}
 
 	if out.Flags.HasExtensions {
-		// When extensions are available, we must find out where the map start in the cbor data.
+		// When extensions are available, we must find out where the map starts in the CBOR data.
 		// It can either be at a[authDataMinLength:] when out.Flags.AttestedCredentialData is false,
 		// or at a[(authDataMinLength+16+2+credIDLen+COSEKeyLen):] when out.Flags.AttestedCredentialData is true
-		// in this case, it requires to cbor-encode back the key to find its length.
+		// in this case, it requires us to CBOR-encode back the key to find its length.
 		startIndex := authDataMinLength
 
 		if out.Flags.AttestedCredentialData {
