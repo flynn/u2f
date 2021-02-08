@@ -139,7 +139,10 @@ func (w *ctap2WebAuthnToken) Register(ctx context.Context, req *RegisterRequest,
 			AttSmt:   make(map[string]interface{}),
 		}
 	case "indirect":
-		// TODO
+		// TODO: expose an anonymisation hook ?
+		// from https://www.w3.org/TR/webauthn-2/#sctn-createCredential:
+		// The client MAY replace the AAGUID and attestation statement with a more privacy-friendly
+		// and/or more easily verifiable version of the same data (for example, by employing an Anonymization CA).
 	case "direct":
 		// Do nothing
 	default:

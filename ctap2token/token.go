@@ -160,7 +160,6 @@ type MakeCredentialRequest struct {
 }
 
 // MakeCredentialResponse
-// TODO: structure may be different with different kind of attestations.
 type MakeCredentialResponse struct {
 	Fmt      string                 `cbor:"1,keyasint"`
 	AuthData AuthData               `cbor:"2,keyasint"`
