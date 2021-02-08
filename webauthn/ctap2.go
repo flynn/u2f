@@ -19,12 +19,12 @@ var supportedCTAP2Transports = map[string]ctap2.AuthenticatorTransport{
 	string(ctap2.USB): ctap2.USB,
 }
 
-type ctap2WebauthnToken struct {
+type ctap2WebAuthnToken struct {
 	t       *ctap2.Token
 	options map[string]bool
 }
 
-func (w *ctap2WebauthnToken) Register(ctx context.Context, req *RegisterRequest, p *RequestParams) (*RegisterResponse, error) {
+func (w *ctap2WebAuthnToken) Register(ctx context.Context, req *RegisterRequest, p *RequestParams) (*RegisterResponse, error) {
 	credTypesAndPubKeyAlgs := make([]ctap2.CredentialParam, 0, len(req.PubKeyCredParams))
 	for _, cp := range req.PubKeyCredParams {
 		t, ok := supportedCTAP2CredentialTypes[cp.Type]
@@ -92,9 +92,9 @@ func (w *ctap2WebauthnToken) Register(ctx context.Context, req *RegisterRequest,
 	resp, err := w.t.MakeCredential(&ctap2.MakeCredentialRequest{
 		ClientDataHash: clientDataHash,
 		RP: ctap2.CredentialRpEntity{
-			ID:   req.Rp.ID,
-			Name: req.Rp.Name,
-			Icon: req.Rp.Icon,
+			ID:   req.RP.ID,
+			Name: req.RP.Name,
+			Icon: req.RP.Icon,
 		},
 		User: ctap2.CredentialUserEntity{
 			ID:          req.User.ID,
@@ -159,7 +159,7 @@ func (w *ctap2WebauthnToken) Register(ctx context.Context, req *RegisterRequest,
 	}, nil
 }
 
-func (w *ctap2WebauthnToken) Authenticate(ctx context.Context, req *AuthenticateRequest, p *RequestParams) (*AuthenticateResponse, error) {
+func (w *ctap2WebAuthnToken) Authenticate(ctx context.Context, req *AuthenticateRequest, p *RequestParams) (*AuthenticateResponse, error) {
 	// TODO add support for extensions (bullet point 8 from https://www.w3.org/TR/2020/WD-webauthn-2-20200730/#sctn-discover-from-external-source)
 	clientExtensions := make(map[string]interface{})
 
@@ -224,22 +224,22 @@ func (w *ctap2WebauthnToken) Authenticate(ctx context.Context, req *Authenticate
 	}, nil
 }
 
-func (w *ctap2WebauthnToken) AuthenticatorSelection(ctx context.Context) error {
+func (w *ctap2WebAuthnToken) AuthenticatorSelection(ctx context.Context) error {
 	return w.t.AuthenticatorSelection(ctx)
 }
 
-func (w *ctap2WebauthnToken) RequireUV() bool {
+func (w *ctap2WebAuthnToken) RequireUV() bool {
 	return w.options["clientPin"]
 }
 
-func (w *ctap2WebauthnToken) SupportRK() bool {
+func (w *ctap2WebAuthnToken) SupportRK() bool {
 	return w.options["rk"]
 }
 
-func (w *ctap2WebauthnToken) SetResponseTimeout(timeout time.Duration) {
+func (w *ctap2WebAuthnToken) SetResponseTimeout(timeout time.Duration) {
 	w.t.SetResponseTimeout(timeout)
 }
 
-func (w *ctap2WebauthnToken) Close() {
+func (w *ctap2WebAuthnToken) Close() {
 	w.t.Close()
 }

@@ -27,34 +27,34 @@ var (
 
 var emptyAAGUID = make([]byte, 16)
 
-type Webauthn struct {
+type WebAuthn struct {
 	debug                  bool
 	pinHandler             pin.PINHandler
 	deviceSelectionTimeout time.Duration
 }
 
-type WebauthnOption func(*Webauthn)
+type WebAuthnOption func(*WebAuthn)
 
-func WithDebug(enabled bool) WebauthnOption {
-	return func(a *Webauthn) {
+func WithDebug(enabled bool) WebAuthnOption {
+	return func(a *WebAuthn) {
 		a.debug = enabled
 	}
 }
 
-func WithCTAP2PinHandler(pinHandler pin.PINHandler) WebauthnOption {
-	return func(a *Webauthn) {
+func WithCTAP2PinHandler(pinHandler pin.PINHandler) WebAuthnOption {
+	return func(a *WebAuthn) {
 		a.pinHandler = pinHandler
 	}
 }
 
-func WithDeviceSelectionTimeout(d time.Duration) WebauthnOption {
-	return func(a *Webauthn) {
+func WithDeviceSelectionTimeout(d time.Duration) WebAuthnOption {
+	return func(a *WebAuthn) {
 		a.deviceSelectionTimeout = d
 	}
 }
 
-func New(opts ...WebauthnOption) *Webauthn {
-	a := &Webauthn{
+func New(opts ...WebAuthnOption) *WebAuthn {
+	a := &WebAuthn{
 		pinHandler:             pin.NewInteractiveHandler(),
 		debug:                  false,
 		deviceSelectionTimeout: time.Duration(DefaultDeviceSelectionTimeout) * time.Second,
@@ -67,7 +67,7 @@ func New(opts ...WebauthnOption) *Webauthn {
 	return a
 }
 
-func (a *Webauthn) Register(ctx context.Context, origin string, req *RegisterRequest) (*RegisterResponse, error) {
+func (a *WebAuthn) Register(ctx context.Context, origin string, req *RegisterRequest) (*RegisterResponse, error) {
 	originURL, err := url.Parse(origin)
 	if err != nil {
 		return nil, fmt.Errorf("webauthn: invalid origin: %w", err)
@@ -83,8 +83,8 @@ func (a *Webauthn) Register(ctx context.Context, origin string, req *RegisterReq
 		req.Timeout = MaxAllowedResponseTimeout
 	}
 
-	if req.Rp.ID == "" {
-		req.Rp.ID = originURL.Hostname()
+	if req.RP.ID == "" {
+		req.RP.ID = originURL.Hostname()
 	}
 
 	authenticators, userPIN, err := a.selectAuthenticators(ctx, req.AuthenticatorSelection)
@@ -137,7 +137,7 @@ func (a *Webauthn) Register(ctx context.Context, origin string, req *RegisterReq
 	}
 }
 
-func (a *Webauthn) Authenticate(ctx context.Context, origin string, req *AuthenticateRequest) (*AuthenticateResponse, error) {
+func (a *WebAuthn) Authenticate(ctx context.Context, origin string, req *AuthenticateRequest) (*AuthenticateResponse, error) {
 	originURL, err := url.Parse(origin)
 	if err != nil {
 		return nil, fmt.Errorf("webauthn: invalid origin: %w", err)
@@ -220,7 +220,7 @@ func closeAll(auths []Authenticator) {
 // requirements.
 // If user verification is required, the user will be prompted to enter the device PIN, or to set it. The PIN will
 // be returned in order to be exchanged later for a pinAuth code (see pin.ExchangeUserPinToPinAuth).
-func (a *Webauthn) selectAuthenticators(ctx context.Context, opts AuthenticatorSelection) ([]Authenticator, []byte, error) {
+func (a *WebAuthn) selectAuthenticators(ctx context.Context, opts AuthenticatorSelection) ([]Authenticator, []byte, error) {
 	var selected []Authenticator
 	var userPIN []byte
 
@@ -252,12 +252,12 @@ func (a *Webauthn) selectAuthenticators(ctx context.Context, opts AuthenticatorS
 						return nil, nil, err
 					}
 
-					current = &ctap2WebauthnToken{
+					current = &ctap2WebAuthnToken{
 						t:       t,
 						options: info.Options,
 					}
 				} else {
-					current = &ctap1WebauthnToken{
+					current = &ctap1WebAuthnToken{
 						t: u2ftoken.NewToken(dev),
 					}
 				}
@@ -291,7 +291,7 @@ func (a *Webauthn) selectAuthenticators(ctx context.Context, opts AuthenticatorS
 		// select the device.
 		ctap2DevicePresent := false
 		for _, s := range selected {
-			if _, isCTAP2 := s.(*ctap2WebauthnToken); isCTAP2 {
+			if _, isCTAP2 := s.(*ctap2WebAuthnToken); isCTAP2 {
 				ctap2DevicePresent = true
 				break
 			}
@@ -321,7 +321,7 @@ func (a *Webauthn) selectAuthenticators(ctx context.Context, opts AuthenticatorS
 						continue
 					}
 					// send a cancel command to CTAP2 devices (they cannot be canceled via go context)
-					if a, ok := s.(*ctap2WebauthnToken); ok {
+					if a, ok := s.(*ctap2WebAuthnToken); ok {
 						a.t.Cancel()
 					}
 					// close all devices not selected
@@ -335,7 +335,7 @@ func (a *Webauthn) selectAuthenticators(ctx context.Context, opts AuthenticatorS
 		}
 
 		// Collect PIN or guide user to set a PIN on CTAP2 authenticators
-		if ctap2Auth, isCTAP2 := selectedAuth.(*ctap2WebauthnToken); isCTAP2 {
+		if ctap2Auth, isCTAP2 := selectedAuth.(*ctap2WebAuthnToken); isCTAP2 {
 			var err error
 			if !selectedAuth.RequireUV() {
 				userPIN, err = a.pinHandler.SetPIN(ctap2Auth.t)

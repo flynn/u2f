@@ -12,11 +12,11 @@ import (
 	"github.com/flynn/u2f/u2ftoken"
 )
 
-type ctap1WebauthnToken struct {
+type ctap1WebAuthnToken struct {
 	t *u2ftoken.Token
 }
 
-func (w *ctap1WebauthnToken) Register(ctx context.Context, req *RegisterRequest, p *RequestParams) (*RegisterResponse, error) {
+func (w *ctap1WebAuthnToken) Register(ctx context.Context, req *RegisterRequest, p *RequestParams) (*RegisterResponse, error) {
 	useES256 := false
 	for _, cp := range req.PubKeyCredParams {
 		if crypto.Alg(cp.Alg) == crypto.ES256 {
@@ -35,7 +35,7 @@ func (w *ctap1WebauthnToken) Register(ctx context.Context, req *RegisterRequest,
 	}
 
 	sha := sha256.New()
-	if _, err := sha.Write([]byte(req.Rp.ID)); err != nil {
+	if _, err := sha.Write([]byte(req.RP.ID)); err != nil {
 		return nil, err
 	}
 	rpIDHash := sha.Sum(nil)
@@ -126,7 +126,7 @@ func (w *ctap1WebauthnToken) Register(ctx context.Context, req *RegisterRequest,
 	}, nil
 }
 
-func (w *ctap1WebauthnToken) Authenticate(ctx context.Context, req *AuthenticateRequest, p *RequestParams) (*AuthenticateResponse, error) {
+func (w *ctap1WebAuthnToken) Authenticate(ctx context.Context, req *AuthenticateRequest, p *RequestParams) (*AuthenticateResponse, error) {
 	if len(req.AllowCredentials) == 0 {
 		return nil, errors.New("webauthn: ctap1 require at least one credential")
 	}
@@ -180,27 +180,27 @@ func (w *ctap1WebauthnToken) Authenticate(ctx context.Context, req *Authenticate
 	}, nil
 }
 
-func (w *ctap1WebauthnToken) AuthenticatorSelection(ctx context.Context) error {
+func (w *ctap1WebAuthnToken) AuthenticatorSelection(ctx context.Context) error {
 	return w.t.AuthenticatorSelection(ctx)
 }
 
-func (w *ctap1WebauthnToken) RequireUV() bool {
+func (w *ctap1WebAuthnToken) RequireUV() bool {
 	return false
 }
 
-func (w *ctap1WebauthnToken) SupportRK() bool {
+func (w *ctap1WebAuthnToken) SupportRK() bool {
 	return false
 }
 
-func (w *ctap1WebauthnToken) SetResponseTimeout(timeout time.Duration) {
+func (w *ctap1WebAuthnToken) SetResponseTimeout(timeout time.Duration) {
 	w.t.SetResponseTimeout(timeout)
 }
 
-func (w *ctap1WebauthnToken) Close() {
+func (w *ctap1WebAuthnToken) Close() {
 	w.t.Close()
 }
 
-func (w *ctap1WebauthnToken) waitRegister(ctx context.Context, req *u2ftoken.RegisterRequest) (*u2ftoken.RegisterResponse, error) {
+func (w *ctap1WebAuthnToken) waitRegister(ctx context.Context, req *u2ftoken.RegisterRequest) (*u2ftoken.RegisterResponse, error) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -219,7 +219,7 @@ func (w *ctap1WebauthnToken) waitRegister(ctx context.Context, req *u2ftoken.Reg
 	}
 }
 
-func (w *ctap1WebauthnToken) waitAuthenticate(ctx context.Context, req *u2ftoken.AuthenticateRequest) (*u2ftoken.AuthenticateResponse, error) {
+func (w *ctap1WebAuthnToken) waitAuthenticate(ctx context.Context, req *u2ftoken.AuthenticateRequest) (*u2ftoken.AuthenticateResponse, error) {
 	for {
 		select {
 		case <-ctx.Done():

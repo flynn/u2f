@@ -53,7 +53,7 @@ func main() {
 	}
 }
 
-func register(t *webauthn.Webauthn, username, host string) error {
+func register(t *webauthn.WebAuthn, username, host string) error {
 	c := &http.Client{}
 
 	httpResp, err := c.Get(fmt.Sprintf("%s/makeCredential/%s?attType=direct&authType=&userVerification=preferred&residentKeyRequirement=false&txAuthExtension=", host, username))
@@ -79,7 +79,7 @@ func register(t *webauthn.Webauthn, username, host string) error {
 		return err
 	}
 
-	fmt.Printf("Webauthn registration request for %q on %q. Confirm presence on authenticator when it will blink...\n", username, host)
+	fmt.Printf("WebAuthn registration request for %q on %q. Confirm presence on authenticator when it will blink...\n", username, host)
 	webauthnResp, err := t.Register(context.Background(), host, webauthnReq.PublicKey)
 	if err != nil {
 		return err
@@ -131,7 +131,7 @@ func register(t *webauthn.Webauthn, username, host string) error {
 	return nil
 }
 
-func authenticate(t *webauthn.Webauthn, username, host string) error {
+func authenticate(t *webauthn.WebAuthn, username, host string) error {
 	c := &http.Client{}
 	httpResp, err := c.Get(fmt.Sprintf("%s/assertion/%s?userVer=discouraged&txAuthExtension=", host, username))
 	if err != nil {
@@ -157,7 +157,7 @@ func authenticate(t *webauthn.Webauthn, username, host string) error {
 		return err
 	}
 
-	fmt.Printf("Webauthn authentication request for %q on %q. Confirm presence on authenticator when it will blink...\n", username, host)
+	fmt.Printf("WebAuthn authentication request for %q on %q. Confirm presence on authenticator when it will blink...\n", username, host)
 	webauthnResp, err := t.Authenticate(context.Background(), host, authReq.PublicKey)
 	if err != nil {
 		return err

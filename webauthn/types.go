@@ -42,27 +42,33 @@ type ExcludedCredential struct {
 }
 
 type RegisterRequest struct {
-	Challenge []byte `json:"challenge"`
-	Rp        struct {
-		ID   string `json:"id"`
-		Name string `json:"name"`
-		Icon string `json:"icon"`
-	} `json:"rp"`
-	User struct {
-		ID          []byte `json:"id"`
-		DisplayName string `json:"displayName"`
-		Name        string `json:"name"`
-		Icon        string `json:"icon"`
-	} `json:"user"`
-	PubKeyCredParams []struct {
-		Type string `json:"type"`
-		Alg  int    `json:"alg"`
-	} `json:"pubKeyCredParams"`
+	Challenge              []byte                 `json:"challenge"`
+	RP                     RP                     `json:"rp"`
+	User                   User                   `json:"user"`
+	PubKeyCredParams       []PubKeyCredParams     `json:"pubKeyCredParams"`
 	ExcludeCredentials     []ExcludedCredential   `json:"excludeCredentials"`
 	AuthenticatorSelection AuthenticatorSelection `json:"authenticatorSelection"`
 	Timeout                int                    `json:"timeout"`
 	Extensions             map[string]interface{} `json:"extensions"`
 	Attestation            string                 `json:"attestation"`
+}
+
+type RP struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Icon string `json:"icon"`
+}
+
+type User struct {
+	ID          []byte `json:"id"`
+	DisplayName string `json:"displayName"`
+	Name        string `json:"name"`
+	Icon        string `json:"icon"`
+}
+
+type PubKeyCredParams struct {
+	Type string `json:"type"`
+	Alg  int    `json:"alg"`
 }
 
 type AuthenticatorSelection struct {
@@ -149,10 +155,7 @@ func (c CollectedClientData) EncodeAndHash() (dataJSON []byte, dataHash []byte, 
 		return nil, nil, err
 	}
 
-	sha := sha256.New()
-	if _, err := sha.Write(dataJSON); err != nil {
-		return nil, nil, err
-	}
-	dataHash = sha.Sum(nil)
+	hash := sha256.Sum256(dataJSON)
+	dataHash = hash[:]
 	return dataJSON, dataHash, nil
 }

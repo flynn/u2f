@@ -53,7 +53,7 @@ func main() {
 	}
 }
 
-func register(t *webauthn.Webauthn, host string) error {
+func register(t *webauthn.WebAuthn, host string) error {
 	c := &http.Client{}
 	reqBody := bytes.NewBuffer([]byte(`{"userVerification":"preferred"}`))
 	httpResp, err := c.Post(fmt.Sprintf("%s/api/v1/simple/webauthn/register-begin", host), "application/json", reqBody)
@@ -86,7 +86,7 @@ func register(t *webauthn.Webauthn, host string) error {
 		return err
 	}
 
-	fmt.Printf("Webauthn registration request for %q on %q. Confirm presence on authenticator when it will blink...\n", respData.Data.Username, host)
+	fmt.Printf("WebAuthn registration request for %q on %q. Confirm presence on authenticator when it will blink...\n", respData.Data.Username, host)
 	webauthnResp, err := t.Register(context.Background(), host, respData.Data.PublicKey)
 	if err != nil {
 		return err
@@ -140,7 +140,7 @@ func register(t *webauthn.Webauthn, host string) error {
 	return nil
 }
 
-func authenticate(t *webauthn.Webauthn, host, session string) error {
+func authenticate(t *webauthn.WebAuthn, host, session string) error {
 	c := &http.Client{}
 	reqBody := bytes.NewBuffer([]byte(`{"userVerification":"preferred"}`))
 
@@ -183,7 +183,7 @@ func authenticate(t *webauthn.Webauthn, host, session string) error {
 		panic(err)
 	}
 
-	fmt.Printf("Webauthn authentication request for %q on %q. Confirm presence on authenticator when it will blink...\n", respData.Data.Username, host)
+	fmt.Printf("WebAuthn authentication request for %q on %q. Confirm presence on authenticator when it will blink...\n", respData.Data.Username, host)
 	webauthnResp, err := t.Authenticate(context.Background(), host, respData.Data.PublicKey)
 	if err != nil {
 		panic(err)
