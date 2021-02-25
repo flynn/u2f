@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"sync"
@@ -141,7 +142,9 @@ func (d *Device) sendCommand(channel uint32, cmd byte, data []byte) error {
 	if err := d.device.Write(d.buf); err != nil {
 		return err
 	}
-
+	fmt.Printf("sendCommand %x\n", cmd)
+	fmt.Println(hex.Dump(data))
+	fmt.Println("----")
 	var seq uint8
 	for len(data) > 0 {
 		// zero buffer
@@ -217,6 +220,9 @@ func (d *Device) readResponse(channel uint32, cmd byte) ([]byte, error) {
 				buf = append(buf, msg...)
 			}
 			if len(buf) >= expected {
+				fmt.Println("readResponse")
+				fmt.Println(hex.Dump(msg))
+				fmt.Println("----")
 				return buf, nil
 			}
 		case <-timeout:
@@ -261,7 +267,7 @@ func (d *Device) Init() error {
 		d.CababilityNMSG = d.RawCapabilities&capabilityNMSG == 0
 		break
 	}
-
+	fmt.Printf("%#v\n", d)
 	return nil
 }
 
