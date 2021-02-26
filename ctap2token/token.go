@@ -629,9 +629,10 @@ const (
 // CredentialDescriptor defines a credential returned by the authenticator,
 // as defined by https://www.w3.org/TR/webauthn/#credential-dictionary
 type CredentialDescriptor struct {
-	ID         []byte                   `cbor:"id"`
-	Type       CredentialType           `cbor:"type"`
-	Transports []AuthenticatorTransport `cbor:"transports"`
+	ID   []byte         `cbor:"id"`
+	Type CredentialType `cbor:"type"`
+	// Don't set transports field when using HyperSecu Mini tokens.
+	Transports []AuthenticatorTransport `cbor:"transports,omitempty"`
 }
 
 // AuthenticatorTransport defines hints as to how clients might communicate with a particular authenticator,

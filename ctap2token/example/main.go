@@ -123,9 +123,8 @@ func main() {
 			RPID: "example.com",
 			AllowList: []*ctap2token.CredentialDescriptor{
 				{
-					ID:         mcpAuthData.AttestedCredentialData.CredentialID,
-					Transports: []ctap2token.AuthenticatorTransport{ctap2token.USB},
-					Type:       ctap2token.PublicKey,
+					ID:   mcpAuthData.AttestedCredentialData.CredentialID,
+					Type: ctap2token.PublicKey,
 				},
 			},
 			ClientDataHash: clientDataHash,
