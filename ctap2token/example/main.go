@@ -74,6 +74,12 @@ func main() {
 				panic(err)
 			}
 
+			// HyperSecu Mini returns CTAP2_ERR_PIN_REQUIRED instead of CTAP2_ERR_ACTION_TIMEOUT
+			// so we need an extra check to ensure the Pin is set on the token before asking the user input.
+			if pinEnabled, ok := info.Options["clientPin"]; !ok || !pinEnabled {
+				panic(fmt.Errorf("Got %s error from token but pin is not set.", ctap2token.ErrPinRequired))
+			}
+
 			pinHandler := pin.NewInteractiveHandler()
 			userPIN, err := pinHandler.ReadPIN()
 			if err != nil {
