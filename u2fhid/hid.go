@@ -14,37 +14,43 @@ import (
 )
 
 const (
-	cmdPing  = 0x80 | 0x01
-	cmdMsg   = 0x80 | 0x03
-	cmdLock  = 0x80 | 0x04
-	cmdInit  = 0x80 | 0x06
-	cmdWink  = 0x80 | 0x08
-	cmdSync  = 0x80 | 0x3c
+	cmdPing = 0x80 | 0x01
+	cmdMsg  = 0x80 | 0x03
+	//cmdLock      = 0x80 | 0x04
+	cmdInit      = 0x80 | 0x06
+	cmdWink      = 0x80 | 0x08
+	cmdCbor      = 0x80 | 0x10
+	cmdCancel    = 0x80 | 0x11
+	cmdKeepAlive = 0x80 | 0x3b
+	//cmdSync      = 0x80 | 0x3c
 	cmdError = 0x80 | 0x3f
 
 	broadcastChannel = 0xffffffff
 
-	capabilityWink = 1
+	capabilityWink = 0x1
+	capabilityCBOR = 0x4
+	capabilityNMSG = 0x8
 
 	minMessageLen      = 7
 	maxMessageLen      = 7609
 	minInitResponseLen = 17
 
-	responseTimeout = 3 * time.Second
+	defaultResponseTimeout = 60 * time.Second
 
 	fidoUsagePage = 0xF1D0
 	u2fUsage      = 1
 )
 
 var errorCodes = map[uint8]string{
-	1: "invalid command",
-	2: "invalid parameter",
-	3: "invalid message length",
-	4: "invalid message sequencing",
-	5: "message timed out",
-	6: "channel busy",
-	7: "command requires channel lock",
-	8: "sync command failed",
+	0x01: "invalid command",
+	0x02: "invalid parameter",
+	0x03: "invalid message length",
+	0x04: "invalid message sequencing",
+	0x05: "message timed out",
+	0x06: "channel busy",
+	0x07: "command requires channel lock",
+	0x08: "sync command failed",
+	0x2d: "pending keep alive was cancelled",
 }
 
 // Devices lists available HID devices that advertise the U2F HID protocol.
@@ -72,12 +78,13 @@ func Open(info *hid.DeviceInfo) (*Device, error) {
 	}
 
 	d := &Device{
-		info:   info,
-		device: hidDev,
-		readCh: hidDev.ReadCh(),
+		info:            info,
+		device:          hidDev,
+		readCh:          hidDev.ReadCh(),
+		responseTimeout: defaultResponseTimeout,
 	}
 
-	if err := d.init(); err != nil {
+	if err := d.Init(); err != nil {
 		return nil, err
 	}
 
@@ -96,17 +103,23 @@ type Device struct {
 	RawCapabilities uint8
 
 	// CapabilityWink is true if the device advertised support for the wink
-	// command during initilization. Even if this flag is true, the device may
+	// command during initialization. Even if this flag is true, the device may
 	// not actually do anything if the command is called.
 	CapabilityWink bool
+	// CapabilityCBOR is true when the device supports CBOR encoded messages
+	// used by the CTAP2 protocol
+	CapabilityCBOR bool
+	// CababilityNMSG is true when the device supports CTAP1 messages
+	CababilityNMSG bool
 
 	info    *hid.DeviceInfo
 	device  hid.Device
 	channel uint32
 
-	mtx    sync.Mutex
-	readCh <-chan []byte
-	buf    []byte
+	mtx             sync.Mutex
+	readCh          <-chan []byte
+	buf             []byte
+	responseTimeout time.Duration
 }
 
 func (d *Device) sendCommand(channel uint32, cmd byte, data []byte) error {
@@ -125,7 +138,6 @@ func (d *Device) sendCommand(channel uint32, cmd byte, data []byte) error {
 
 	n := copy(d.buf[8:], data)
 	data = data[n:]
-
 	if err := d.device.Write(d.buf); err != nil {
 		return err
 	}
@@ -150,7 +162,7 @@ func (d *Device) sendCommand(channel uint32, cmd byte, data []byte) error {
 }
 
 func (d *Device) readResponse(channel uint32, cmd byte) ([]byte, error) {
-	timeout := time.After(responseTimeout)
+	timeout := time.After(d.responseTimeout)
 
 	haveFirst := false
 	var buf []byte
@@ -177,9 +189,14 @@ func (d *Device) readResponse(channel uint32, cmd byte) ([]byte, error) {
 				return nil, fmt.Errorf("u2fhid: received error from device: %s", errMsg)
 			}
 
+			// device will send keepalive msg when waiting for the user presence
+			if msg[4] == cmdKeepAlive {
+				continue
+			}
+
 			if !haveFirst {
 				if msg[4] != cmd {
-					return nil, fmt.Errorf("u2fhid: error reading response, unexpected command %d, wanted %d", msg[4], cmd)
+					return nil, fmt.Errorf("u2fhid: error reading response, unexpected command %x, wanted %x", msg[4], cmd)
 				}
 				haveFirst = true
 				expected = int(binary.BigEndian.Uint16(msg[5:]))
@@ -208,7 +225,7 @@ func (d *Device) readResponse(channel uint32, cmd byte) ([]byte, error) {
 	}
 }
 
-func (d *Device) init() error {
+func (d *Device) Init() error {
 	d.buf = make([]byte, d.info.OutputReportLength+1)
 
 	nonce := make([]byte, 8)
@@ -240,6 +257,8 @@ func (d *Device) init() error {
 		d.BuildDeviceVersion = res[15]
 		d.RawCapabilities = res[16]
 		d.CapabilityWink = d.RawCapabilities&capabilityWink != 0
+		d.CapabilityCBOR = d.RawCapabilities&capabilityCBOR != 0
+		d.CababilityNMSG = d.RawCapabilities&capabilityNMSG == 0
 		break
 	}
 
@@ -272,10 +291,28 @@ func (d *Device) Wink() error {
 // Message sends an encapsulated U2F protocol message to the device and returns
 // the response.
 func (d *Device) Message(data []byte) ([]byte, error) {
+	// Size of header + data + 2 zero bytes for maximum return size.
+	// see https://en.wikipedia.org/wiki/Smart_card_application_protocol_data_unit
+	data = append(data, []byte{0, 0}...)
 	return d.Command(cmdMsg, data)
+}
+
+// CBOR sends an encapsulated CBOR protocol message to the device and returns
+// the response.
+func (d *Device) CBOR(data []byte) ([]byte, error) {
+	return d.Command(cmdCbor, data)
+}
+
+func (d *Device) Cancel() {
+	// As the cancel command is sent during an ongoing transaction, transaction semantics do not apply.
+	_ = d.sendCommand(d.channel, cmdCancel, nil)
 }
 
 // Close closes the device and frees associated resources.
 func (d *Device) Close() {
 	d.device.Close()
+}
+
+func (d *Device) SetResponseTimeout(timeout time.Duration) {
+	d.responseTimeout = timeout
 }

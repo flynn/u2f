@@ -36,10 +36,14 @@ func main() {
 
 	challenge := make([]byte, 32)
 	app := make([]byte, 32)
-	io.ReadFull(rand.Reader, challenge)
-	io.ReadFull(rand.Reader, app)
+	if _, err := io.ReadFull(rand.Reader, challenge); err != nil {
+		log.Fatal(err)
+	}
+	if _, err := io.ReadFull(rand.Reader, app); err != nil {
+		log.Fatal(err)
+	}
 
-	var res []byte
+	var res *u2ftoken.RegisterResponse
 	log.Println("registering, provide user presence")
 	for {
 		res, err = t.Register(u2ftoken.RegisterRequest{Challenge: challenge, Application: app})
@@ -51,13 +55,6 @@ func main() {
 		}
 		break
 	}
-
-	log.Printf("registered: %x", res)
-	res = res[66:]
-	khLen := int(res[0])
-	res = res[1:]
-	keyHandle := res[:khLen]
-	log.Printf("key handle: %x", keyHandle)
 
 	dev.Close()
 
@@ -75,17 +72,19 @@ func main() {
 	}
 	t = u2ftoken.NewToken(dev)
 
-	io.ReadFull(rand.Reader, challenge)
+	if _, err := io.ReadFull(rand.Reader, challenge); err != nil {
+		log.Fatal(err)
+	}
+
 	req := u2ftoken.AuthenticateRequest{
 		Challenge:   challenge,
 		Application: app,
-		KeyHandle:   keyHandle,
+		KeyHandle:   res.KeyHandle,
 	}
 	if err := t.CheckAuthenticate(req); err != nil {
 		log.Fatal(err)
 	}
 
-	io.ReadFull(rand.Reader, challenge)
 	log.Println("authenticating, provide user presence")
 	for {
 		res, err := t.Authenticate(req)
