@@ -15,6 +15,7 @@ Tested with these devices on macOS, Linux, and Windows:
 | Feitian | FIDO K6 | 0x096e | 0x0850 | 11.03 | Yes | Also known as Feitian ePass FIDO Agile 2. |
 | Feitian | MultiPass FIDO | 0x096e | 0x085a | 32.06 | Yes | |
 | Hypersecu | HyperFIDO U2F Security Key | 0x096e | 0x0880 | 10.05 | Yes | Also known as Feitian FIDO K5. |
+| Hypersecu | HyperFIDO Pro Mini Security Key | 0x2ccf | 0x0854 | | Yes | Supports FIDO2 |
 | NEOWAVE | Keydo | 0x1e0d | 0xf1d0 | 1.00 | Yes | |
 | Plug-up | Security Key | 0x2581 | 0xf1d0 | 0.01 | No | |
 | SatoshiLabs | Bitcoin Wallet [TREZOR] | 0x534c | 0x0001 | 1.6.0 | ? | Tested on Linux |
