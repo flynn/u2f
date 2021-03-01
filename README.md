@@ -27,3 +27,5 @@ Tested with these devices on macOS, Linux, and Windows:
 On Linux, installation of [udev
 rules](https://github.com/Yubico/libu2f-host/blob/master/70-u2f.rules) is
 required.
+
+On Windows, this must be run with Administrator privileges.
